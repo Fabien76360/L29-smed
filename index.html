@@ -180,6 +180,20 @@ body.journal-hidden .timer-grid {
 .timer-bar > * {
   flex:1 1 260px;
 }
+.chrono-card{
+  display:grid; grid-template-columns:1fr auto; gap:20px;
+  align-items:center; padding:18px 22px; border-radius:999px;
+  background:linear-gradient(140deg,rgba(13,28,61,.8),rgba(61,220,151,.12));
+  border:1px solid rgba(61,220,151,.35);
+}
+.chrono-main{display:grid; justify-items:center; gap:6px}
+.chrono-display{font-variant-numeric:tabular-nums; font-size:3rem; font-weight:700}
+.chrono-state{font-size:.8rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase}
+.chrono-meta{display:flex; gap:16px}
+.chrono-meta .meta{background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+  padding:10px 14px; border-radius:14px; min-width:120px; text-align:center}
+.chrono-meta .value{font-weight:700; font-size:1.1rem}
+.chrono-meta small{opacity:.8}
 .main-actions {
   display:flex;
   flex:2 1 320px;
@@ -225,18 +239,6 @@ body.journal-hidden .timer-grid {
   font-size:3rem;
   line-height:1;
   font-weight:700;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:16px;
-  border-radius:999px;
-  background:linear-gradient(140deg,rgba(13,28,61,.8),rgba(61,220,151,.12));
-  border:1px solid rgba(61,220,151,.35);
-  padding:20px 32px;
-}
-#display small {
-  font-size:0.8rem;
-  color:var(--muted);
 }
 .main-actions {
   display:flex;
@@ -720,21 +722,28 @@ summary { cursor:pointer; }
             </div>
             <div class="timer-top">
               <div class="timer-bar">
-                <div class="round-pill">
-                  <span class="label-muted">Chronomètre</span>
-                  <div id="display">00:00:00</div>
-                  <div id="state">Prêt</div>
+                <div class="chrono-card">
+                  <div class="chrono-main">
+                    <div class="chrono-title label-muted">Chronomètre</div>
+                    <div id="display" class="chrono-display">00:00:00</div>
+                    <div id="state" class="chrono-state">Prêt</div>
+                  </div>
+                  <div class="chrono-meta">
+                    <div class="meta">
+                      <div class="label-muted">Cible</div>
+                      <div class="value"><span id="targetMin">0</span> <small>min</small></div>
+                    </div>
+                    <div class="meta">
+                      <div class="label-muted">Alerte</div>
+                      <div class="value"><span id="warnMin">0</span> <small>min</small></div>
+                    </div>
+                  </div>
                 </div>
                 <div class="main-actions">
-                  <button id="startPause" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
+                  <button id="start" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
                   <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement rapide</button>
                   <button id="end" class="warn" type="button"><span class="icon">■</span>Fin du changement</button>
                   <button id="reset" class="danger" type="button"><span class="icon">↺</span>Reset session</button>
-                </div>
-                <div class="round-pill">
-                  <div class="label-muted">Références</div>
-                  <strong><span id="targetMin">0</span> min</strong>
-                  <span class="badge">Alerte <span id="warnMin">0</span> min</span>
                 </div>
               </div>
               <div class="progress-bar" id="progress" aria-hidden="true"><div class="progress-value"></div></div>
@@ -891,6 +900,7 @@ summary { cursor:pointer; }
     elapsedMs: 0,
     prepaElapsedMs: 0,
     paused: true,
+    pausedTotalMs: 0,
     activePhase: 'Prépa chgt de PO',
     marks: [],
     sessionStart: Date.now(),
@@ -904,7 +914,7 @@ summary { cursor:pointer; }
     pages: document.querySelectorAll('.page'),
     navButtons: document.querySelectorAll('.nav-tabs button'),
     display: document.getElementById('display'),
-    startPause: document.getElementById('startPause'),
+    start: document.getElementById('start'),
     lap: document.getElementById('lap'),
     end: document.getElementById('end'),
     reset: document.getElementById('reset'),
@@ -958,7 +968,8 @@ summary { cursor:pointer; }
     journalHidden: false,
     analysisTimeout: null,
     shouldScrollToCurrent: false,
-    quickEventMenu: null
+    quickEventMenu: null,
+    pauseStartedAt: null
   };
 
   function loadState() {
@@ -1033,6 +1044,7 @@ summary { cursor:pointer; }
     }));
     if (!Number.isFinite(merged.elapsedMs)) merged.elapsedMs = 0;
     if (!Number.isFinite(merged.prepaElapsedMs)) merged.prepaElapsedMs = 0;
+    merged.pausedTotalMs = Number.isFinite(merged.pausedTotalMs) ? merged.pausedTotalMs : 0;
     if (!Number.isFinite(merged.sessionElapsedMs)) merged.sessionElapsedMs = 0;
     if (!merged.sessionStart) merged.sessionStart = Date.now();
     if (!('paused' in merged)) merged.paused = true;
@@ -1316,15 +1328,25 @@ summary { cursor:pointer; }
       state.runningSince = now;
     }
     state.activePhase = phase;
-    if (phase === 'Prépa chgt de PO') {
-      els.startPause.disabled = true;
-      els.startPause.classList.remove('primary');
-      els.startPause.classList.add('secondary');
-      els.state.textContent = 'Phase hors chrono';
-    } else {
-      els.startPause.disabled = false;
-      els.startPause.classList.add('primary');
-      els.startPause.classList.remove('secondary');
+    const hasStarted = state.marks.some(m => m.kind === 'start');
+    if (els.start) {
+      if (phase === 'Prépa chgt de PO') {
+        els.start.disabled = true;
+        els.start.classList.remove('primary');
+        els.start.classList.add('secondary');
+        els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
+        els.state.textContent = 'Phase hors chrono';
+      } else {
+        els.start.classList.add('primary');
+        els.start.classList.remove('secondary');
+        if (hasStarted) {
+          els.start.disabled = true;
+          els.start.innerHTML = 'En cours';
+        } else {
+          els.start.disabled = false;
+          els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
+        }
+      }
     }
     state.marks.push({
       t: getSessionElapsed(),
@@ -1352,6 +1374,10 @@ summary { cursor:pointer; }
     }
     state.paused = !state.paused;
     if (!state.paused) {
+      if (runtime.pauseStartedAt) {
+        state.pausedTotalMs += Date.now() - runtime.pauseStartedAt;
+        runtime.pauseStartedAt = null;
+      }
       state.runningSince = Date.now();
       runtime.lastTick = performance.now();
       state.marks.push({
@@ -1361,7 +1387,12 @@ summary { cursor:pointer; }
         kind: 'start',
         hc: false
       });
-      els.startPause.innerHTML = '<span class="icon">⏸</span>Pause';
+      if (els.start) {
+        els.start.disabled = true;
+        els.start.classList.add('primary');
+        els.start.classList.remove('secondary');
+        els.start.innerHTML = 'En cours';
+      }
       requestTick();
       showToast('Chrono démarré');
     } else {
@@ -1376,7 +1407,7 @@ summary { cursor:pointer; }
         }
       }
       state.runningSince = null;
-      els.startPause.innerHTML = '<span class="icon">▶</span>Démarrer';
+      runtime.pauseStartedAt = Date.now();
       state.marks.push({
         t: getSessionElapsed(),
         phase: state.activePhase,
@@ -1413,7 +1444,11 @@ summary { cursor:pointer; }
     const pct = targetMs ? Math.min(100, (currentElapsed/targetMs)*100) : 0;
     els.progress.style.width = `${Math.min(100, pct)}%`;
     els.progress.style.background = currentElapsed <= warnMs ? 'var(--accent)' : currentElapsed <= targetMs ? 'var(--warn)' : 'var(--danger)';
-    els.state.textContent = state.paused ? 'En pause' : 'En cours';
+    if (state.activePhase === 'Prépa chgt de PO') {
+      els.state.textContent = 'Phase hors chrono';
+    } else {
+      els.state.textContent = state.paused ? 'En pause' : 'En cours';
+    }
     els.targetMin.textContent = totalTargetMinutes().toFixed(1);
     els.warnMin.textContent = Number(state.alertMin || (totalTargetMinutes()*0.85)).toFixed(1);
   }
@@ -1507,6 +1542,10 @@ summary { cursor:pointer; }
 
   function finishChange() {
     if (!state.marks.some(m => m.kind === 'end')) {
+      if (runtime.pauseStartedAt) {
+        state.pausedTotalMs += Date.now() - runtime.pauseStartedAt;
+        runtime.pauseStartedAt = null;
+      }
       addEvent('Fin du changement', { kind: 'end' });
       state.paused = true;
       if (state.runningSince) {
@@ -1520,7 +1559,6 @@ summary { cursor:pointer; }
         }
         state.runningSince = null;
       }
-      els.startPause.innerHTML = '<span class="icon">▶</span>Démarrer';
       updateDisplay();
       showToast('Changement terminé');
     }
@@ -1685,6 +1723,7 @@ ${buildReportHtml()}
           <div class="kpi-card"><span>Cible (min)</span><strong>${targetMinutes}</strong></div>
           <div class="kpi-card"><span>Écart</span><strong>${formatDuration(kpi.gap)}</strong></div>
           <div class="kpi-card"><span>Gain potentiel</span><strong>${formatDuration(kpi.potential)}</strong></div>
+          <div class="kpi-card"><span>Temps en pause</span><strong>${formatDuration(kpi.paused)}</strong></div>
         </div>
       </section>
       <section class="section">
@@ -1773,7 +1812,8 @@ ${buildReportHtml()}
         total: totalChrono,
         target: targetMs,
         gap: gapMs,
-        potential
+        potential,
+        paused: state.pausedTotalMs
       },
       phases,
       operators,
@@ -1796,6 +1836,7 @@ ${buildReportHtml()}
       <div class="kpi-card"><span>Cible (min)</span><strong>${target.toFixed(1)}</strong></div>
       <div class="kpi-card"><span>Écart</span><strong class="${analysis.kpi.gap>0 ? 'bad' : ''}">${formatDuration(analysis.kpi.gap)}</strong></div>
       <div class="kpi-card"><span>Gain potentiel</span><strong>${formatDuration(analysis.kpi.potential)}</strong></div>
+      <div class="kpi-card"><span>Temps en pause</span><strong>${formatDuration(analysis.kpi.paused)}</strong></div>
     `;
     els.phaseDistribution.innerHTML = '';
     analysis.phases.forEach(item => {
@@ -2152,16 +2193,25 @@ ${buildReportHtml()}
     buildDefaultsForm();
     renderEventsList();
     renderAnalysis();
-    if (state.activePhase === 'Prépa chgt de PO') {
-      els.startPause.disabled = true;
-      els.startPause.classList.remove('primary');
-      els.startPause.classList.add('secondary');
-    } else {
-      els.startPause.disabled = false;
-      els.startPause.classList.add('primary');
-      els.startPause.classList.remove('secondary');
+    if (els.start) {
+      const hasStarted = state.marks.some(m => m.kind === 'start');
+      if (state.activePhase === 'Prépa chgt de PO') {
+        els.start.disabled = true;
+        els.start.classList.remove('primary');
+        els.start.classList.add('secondary');
+        els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
+      } else {
+        els.start.classList.add('primary');
+        els.start.classList.remove('secondary');
+        if (hasStarted) {
+          els.start.disabled = true;
+          els.start.innerHTML = 'En cours';
+        } else {
+          els.start.disabled = false;
+          els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
+        }
+      }
     }
-    els.startPause.innerHTML = state.paused ? '<span class="icon">▶</span>Démarrer' : '<span class="icon">⏸</span>Pause';
     if (!state.paused && state.runningSince) {
       requestTick();
     }
@@ -2174,13 +2224,29 @@ ${buildReportHtml()}
 
   function bindEvents() {
     els.navButtons.forEach(btn => btn.addEventListener('click', () => switchPage(btn.dataset.target, btn)));
-    els.startPause.addEventListener('click', toggleTimer);
+    if (els.start) {
+      els.start.addEventListener('click', () => {
+        if (state.activePhase === 'Prépa chgt de PO') {
+          showToast('Phase hors chrono : démarrage indisponible', 'info');
+          return;
+        }
+        if (state.paused) {
+          toggleTimer();
+          els.start.disabled = true;
+          els.start.innerHTML = 'En cours';
+        }
+      });
+    }
     els.lap.setAttribute('aria-haspopup', 'menu');
     els.lap.setAttribute('aria-expanded', 'false');
     els.lap.addEventListener('click', openQuickEventMenu);
     const openRpt = document.getElementById('openReport');
     if (openRpt) openRpt.addEventListener('click', exportHtml);
-    els.end.addEventListener('click', finishChange);
+    els.end.addEventListener('click', () => {
+      const ok = confirm('Confirmer la fin du changement ?');
+      if (!ok) return;
+      finishChange();
+    });
     els.reset.addEventListener('click', () => {
       if (!confirm('Réinitialiser la session ?')) return;
 
@@ -2198,10 +2264,14 @@ ${buildReportHtml()}
 
       // 3) Repartir en Prépa (HC) et UI cohérente
       state.activePhase = 'Prépa chgt de PO';
-      els.startPause.disabled = true;
-      els.startPause.classList.remove('primary');
-      els.startPause.classList.add('secondary');
-      els.startPause.innerHTML = '<span class="icon">▶</span>Démarrer';
+      state.pausedTotalMs = 0;
+      runtime.pauseStartedAt = null;
+      if (els.start) {
+        els.start.disabled = true;
+        els.start.classList.remove('primary');
+        els.start.classList.add('secondary');
+        els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
+      }
       runtime.focusedOperator = state.defaultOperatorIndex || 0;
 
       // 4) Sauvegarde + re-render + recentrage opé courante
