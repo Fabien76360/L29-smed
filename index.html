@@ -718,7 +718,6 @@ summary { cursor:pointer; }
                 <div class="main-actions">
                   <button id="startPause" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
                   <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement rapide</button>
-                  <button id="markOp" class="secondary" type="button"><span class="icon">✓</span>Opération suivante</button>
                   <button id="end" class="warn" type="button"><span class="icon">■</span>Fin du changement</button>
                   <button id="reset" class="danger" type="button"><span class="icon">↺</span>Reset session</button>
                 </div>
@@ -730,6 +729,7 @@ summary { cursor:pointer; }
               </div>
               <div class="progress-bar" id="progress" aria-hidden="true"><div class="progress-value"></div></div>
               <div class="chip-row" id="phaseChips" role="tablist"></div>
+              <button id="toggleDone" class="chip" type="button" aria-pressed="false">Masquer opérations validées</button>
               <div class="label-muted" id="now"></div>
             </div>
             <div class="ops-columns" id="opsPhaseChips"></div>
@@ -780,6 +780,7 @@ summary { cursor:pointer; }
             <div class="field"><label>Opérateur 1<input type="text" id="op1"></label></div>
             <div class="field"><label>Opérateur 2<input type="text" id="op2"></label></div>
             <div class="field"><label>Opérateur 3<input type="text" id="op3"></label></div>
+            <div class="field"><label>Opérateur 4<input type="text" id="op4"></label></div>
           </div>
           <div class="param-tile">
             <h3>Assignations</h3>
@@ -858,9 +859,10 @@ summary { cursor:pointer; }
     line: 'L29',
     po: '',
     mode: 'up',
-    operators: ['Opérateur A','', ''],
+    operators: ['Opérateur A','', '', ''],
     defaultOperatorIndex: 0,
     multiView: true,
+    hideDone: false,
     events: [],
     phases: {
       'Prépa chgt de PO': [
@@ -896,7 +898,6 @@ summary { cursor:pointer; }
     display: document.getElementById('display'),
     startPause: document.getElementById('startPause'),
     lap: document.getElementById('lap'),
-    markOp: document.getElementById('markOp'),
     end: document.getElementById('end'),
     reset: document.getElementById('reset'),
     state: document.getElementById('state'),
@@ -913,6 +914,7 @@ summary { cursor:pointer; }
     fullscreen: document.getElementById('fullscreen'),
     toggleJournal: document.getElementById('toggleJournal'),
     phaseChips: document.getElementById('phaseChips'),
+    toggleDone: document.getElementById('toggleDone'),
     opsPhaseChips: document.getElementById('opsPhaseChips'),
     saveParams: document.getElementById('saveParams'),
     resetParams: document.getElementById('resetParams'),
@@ -922,7 +924,7 @@ summary { cursor:pointer; }
     alertInput: document.getElementById('alertInput'),
     suggestAlert: document.getElementById('suggestAlert'),
     defaultOperator: document.getElementById('defaultOperator'),
-    opInputs: [document.getElementById('op1'), document.getElementById('op2'), document.getElementById('op3')],
+    opInputs: [document.getElementById('op1'), document.getElementById('op2'), document.getElementById('op3'), document.getElementById('op4')],
     multiView: document.getElementById('multiView'),
     phaseTables: document.getElementById('phaseTables'),
     kpiGrid: document.getElementById('kpiGrid'),
@@ -968,9 +970,13 @@ summary { cursor:pointer; }
     merged.schema_version = SCHEMA_VERSION;
     merged.line = 'L29';
     merged.phases = merged.phases || DEFAULT_STATE().phases;
-    merged.operators = merged.operators || ['', '', ''];
-    while (merged.operators.length < 3) merged.operators.push('');
+    merged.operators = Array.isArray(merged.operators) ? merged.operators : ['', '', '', ''];
+    while (merged.operators.length < 4) merged.operators.push('');
     merged.defaultOperatorIndex = typeof merged.defaultOperatorIndex === 'number' ? merged.defaultOperatorIndex : 0;
+    if (merged.defaultOperatorIndex < 0 || merged.defaultOperatorIndex >= merged.operators.length) {
+      merged.defaultOperatorIndex = 0;
+    }
+    merged.hideDone = !!merged.hideDone;
     merged.alertMin = Number.isFinite(merged.alertMin) ? merged.alertMin : 0;
     merged.marks = Array.isArray(merged.marks) ? merged.marks : [];
     Object.keys(merged.phases).forEach(ph => {
@@ -1134,6 +1140,13 @@ summary { cursor:pointer; }
     });
   }
 
+  function updateToggleDoneButton() {
+    if (!els.toggleDone) return;
+    const label = state.hideDone ? 'Afficher opérations validées' : 'Masquer opérations validées';
+    els.toggleDone.textContent = label;
+    els.toggleDone.setAttribute('aria-pressed', state.hideDone ? 'true' : 'false');
+  }
+
   function renderOperatorColumns() {
     ensureCompletedStructures();
     els.opsPhaseChips.innerHTML = '';
@@ -1198,6 +1211,11 @@ summary { cursor:pointer; }
         if (!isDone && firstPending) { pill.classList.add('current'); firstPending = false; }
         pill.innerHTML = `<span class="index">${opIndex + 1}</span><span>${escapeHtml(operation.name)}</span><span class="check">✔</span>`;
         pill.addEventListener('click', () => validateOperation(idx, operation));
+        if (state.hideDone && isDone) {
+          pill.style.display = 'none';
+        } else {
+          pill.style.display = '';
+        }
         list.appendChild(pill);
       });
 
@@ -2036,7 +2054,9 @@ ${buildReportHtml()}
 
   function buildDefaultsForm() {
     state.operators.forEach((op, idx) => {
-      els.opInputs[idx].value = op;
+      if (els.opInputs[idx]) {
+        els.opInputs[idx].value = op;
+      }
     });
     els.defaultOperator.innerHTML = '';
     state.operators.forEach((op, idx) => {
@@ -2100,6 +2120,7 @@ ${buildReportHtml()}
     els.mode.value = state.mode;
     renderPhaseChips();
     renderOperatorColumns();
+    updateToggleDoneButton();
     updateTargets();
     updateDisplay();
     renderLog();
@@ -2135,22 +2156,14 @@ ${buildReportHtml()}
     els.lap.addEventListener('click', openQuickEventMenu);
     const openRpt = document.getElementById('openReport');
     if (openRpt) openRpt.addEventListener('click', exportHtml);
-    els.markOp.addEventListener('click', () => {
-      if (state.activePhase === 'Prépa chgt de PO') {
-        showToast('Checklist Prépa (HC) : validation sans impact chrono', 'info');
-      }
-      ensureCompletedStructures();
-      const ops = state.phases[state.activePhase] || [];
-      const operatorIndex = runtime.focusedOperator;
-      const completedSet = state.completedOpsByOp[getCurrentOperatorName(operatorIndex)][state.activePhase];
-      const nextOp = ops.find(op => {
-        const assigned = (op.operatorIndex ?? state.defaultOperatorIndex);
-        if (assigned !== operatorIndex) return false;
-        if (!op.id) op.id = newId();
-        return !completedSet.has(op.id);
+    if (els.toggleDone) {
+      els.toggleDone.addEventListener('click', () => {
+        state.hideDone = !state.hideDone;
+        updateToggleDoneButton();
+        saveState();
+        renderOperatorColumns();
       });
-      if (nextOp) validateOperation(operatorIndex, nextOp);
-    });
+    }
     els.end.addEventListener('click', finishChange);
     els.reset.addEventListener('click', () => {
       if (!confirm('Réinitialiser la session ?')) return;
@@ -2211,6 +2224,7 @@ ${buildReportHtml()}
       updateAnalysisDelayed();
     });
     els.opInputs.forEach((input, idx) => {
+      if (!input) return;
       input.addEventListener('input', () => {
         const previousName = getCurrentOperatorName(idx);
         state.operators[idx] = input.value;
@@ -2268,10 +2282,6 @@ ${buildReportHtml()}
       event.preventDefault();
       toggleTimer();
     }
-    if (event.key.toLowerCase() === 'e') {
-      event.preventDefault();
-      els.markOp.click();
-    }
     if (event.key.toLowerCase() === 'l') {
       event.preventDefault();
       els.lap.click();
@@ -2280,7 +2290,7 @@ ${buildReportHtml()}
       event.preventDefault();
       toggleJournalVisibility();
     }
-    if (['1','2','3'].includes(event.key)) {
+    if (['1','2','3','4'].includes(event.key)) {
       runtime.focusedOperator = Number(event.key) - 1;
       renderOperatorColumns();
     }
