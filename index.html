@@ -671,6 +671,16 @@ summary { cursor:pointer; }
   border-color:var(--accent);
   color:var(--accent);
 }
+.done-group{margin-bottom:6px}
+.done-group summary{
+  list-style:none; cursor:pointer; user-select:none;
+  padding:8px 12px; border-radius:12px; font-size:.85rem;
+  background:rgba(61,220,151,.10); border:1px solid rgba(61,220,151,.35);
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+.done-group summary::-webkit-details-marker{display:none}
+.done-group .count{opacity:.8; font-variant-numeric:tabular-nums}
+.done-list{display:flex; flex-direction:column; gap:10px; padding-top:8px}
 @media print {
   body { background:#fff; color:#000; }
   .app { display:block; }
@@ -729,7 +739,6 @@ summary { cursor:pointer; }
               </div>
               <div class="progress-bar" id="progress" aria-hidden="true"><div class="progress-value"></div></div>
               <div class="chip-row" id="phaseChips" role="tablist"></div>
-              <button id="toggleDone" class="chip" type="button" aria-pressed="false">Masquer opérations validées</button>
               <div class="label-muted" id="now"></div>
             </div>
             <div class="ops-columns" id="opsPhaseChips"></div>
@@ -862,7 +871,6 @@ summary { cursor:pointer; }
     operators: ['Opérateur A','', '', ''],
     defaultOperatorIndex: 0,
     multiView: true,
-    hideDone: false,
     events: [],
     phases: {
       'Prépa chgt de PO': [
@@ -914,7 +922,6 @@ summary { cursor:pointer; }
     fullscreen: document.getElementById('fullscreen'),
     toggleJournal: document.getElementById('toggleJournal'),
     phaseChips: document.getElementById('phaseChips'),
-    toggleDone: document.getElementById('toggleDone'),
     opsPhaseChips: document.getElementById('opsPhaseChips'),
     saveParams: document.getElementById('saveParams'),
     resetParams: document.getElementById('resetParams'),
@@ -976,7 +983,6 @@ summary { cursor:pointer; }
     if (merged.defaultOperatorIndex < 0 || merged.defaultOperatorIndex >= merged.operators.length) {
       merged.defaultOperatorIndex = 0;
     }
-    merged.hideDone = !!merged.hideDone;
     merged.alertMin = Number.isFinite(merged.alertMin) ? merged.alertMin : 0;
     merged.marks = Array.isArray(merged.marks) ? merged.marks : [];
     Object.keys(merged.phases).forEach(ph => {
@@ -1140,13 +1146,6 @@ summary { cursor:pointer; }
     });
   }
 
-  function updateToggleDoneButton() {
-    if (!els.toggleDone) return;
-    const label = state.hideDone ? 'Afficher opérations validées' : 'Masquer opérations validées';
-    els.toggleDone.textContent = label;
-    els.toggleDone.setAttribute('aria-pressed', state.hideDone ? 'true' : 'false');
-  }
-
   function renderOperatorColumns() {
     ensureCompletedStructures();
     els.opsPhaseChips.innerHTML = '';
@@ -1193,28 +1192,54 @@ summary { cursor:pointer; }
       const pct = phaseOps.length ? Math.round((completed/phaseOps.length)*100) : 0;
 
       card.innerHTML = `<div class="operator-header">
-        <h3>${escapeHtml(operatorName)}</h3>
-        <span class="progress-text">${pct}%</span>
-      </div>`;
+          <h3>${escapeHtml(operatorName)}</h3>
+          <span class="progress-text">${pct}%</span>
+        </div>`;
+
+      const doneOps = [];
+      const todoOps = [];
+
+      phaseOps.forEach((operation, opIndex) => {
+        if (!operation.id) operation.id = newId();
+        const isDone = completedSetForPhase.has(operation.id || operation.name);
+        const target = isDone ? doneOps : todoOps;
+        target.push({ operation, opIndex, isDone });
+      });
+
+      const buildPill = (operation, opIndex, isDone) => {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'op-pill';
+        if (isDone) pill.classList.add('done');
+        pill.innerHTML = `<span class="index">${opIndex + 1}</span><span>${escapeHtml(operation.name)}</span><span class="check">✔</span>`;
+        pill.addEventListener('click', () => validateOperation(idx, operation));
+        return pill;
+      };
+
+      if (doneOps.length) {
+        const doneDetails = document.createElement('details');
+        doneDetails.className = 'done-group';
+        const summary = document.createElement('summary');
+        summary.innerHTML = 'Réalisées <span class="count">(' + doneOps.length + ')</span>';
+        const doneList = document.createElement('div');
+        doneList.className = 'done-list';
+        doneOps.forEach(({ operation, opIndex }) => {
+          const pill = buildPill(operation, opIndex, true);
+          doneList.appendChild(pill);
+        });
+        doneDetails.append(summary, doneList);
+        card.appendChild(doneDetails);
+      }
 
       const list = document.createElement('div');
       list.className = 'op-list';
       let firstPending = true;
 
-      phaseOps.forEach((operation, opIndex) => {
-        if (!operation.id) operation.id = newId();
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'op-pill';
-        const isDone = completedSetForPhase.has(operation.id || operation.name);
-        if (isDone) pill.classList.add('done');
-        if (!isDone && firstPending) { pill.classList.add('current'); firstPending = false; }
-        pill.innerHTML = `<span class="index">${opIndex + 1}</span><span>${escapeHtml(operation.name)}</span><span class="check">✔</span>`;
-        pill.addEventListener('click', () => validateOperation(idx, operation));
-        if (state.hideDone && isDone) {
-          pill.style.display = 'none';
-        } else {
-          pill.style.display = '';
+      todoOps.forEach(({ operation, opIndex }) => {
+        const pill = buildPill(operation, opIndex, false);
+        if (firstPending) {
+          pill.classList.add('current');
+          firstPending = false;
         }
         list.appendChild(pill);
       });
@@ -2120,7 +2145,6 @@ ${buildReportHtml()}
     els.mode.value = state.mode;
     renderPhaseChips();
     renderOperatorColumns();
-    updateToggleDoneButton();
     updateTargets();
     updateDisplay();
     renderLog();
@@ -2156,14 +2180,6 @@ ${buildReportHtml()}
     els.lap.addEventListener('click', openQuickEventMenu);
     const openRpt = document.getElementById('openReport');
     if (openRpt) openRpt.addEventListener('click', exportHtml);
-    if (els.toggleDone) {
-      els.toggleDone.addEventListener('click', () => {
-        state.hideDone = !state.hideDone;
-        updateToggleDoneButton();
-        saveState();
-        renderOperatorColumns();
-      });
-    }
     els.end.addEventListener('click', finishChange);
     els.reset.addEventListener('click', () => {
       if (!confirm('Réinitialiser la session ?')) return;
