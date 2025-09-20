@@ -361,6 +361,16 @@ button:not(:disabled):active { transform:translateY(1px); }
   border-color:var(--accent);
   box-shadow:0 0 0 2px rgba(61,220,151,.35);
 }
+/* Colonne + pastille opérateur */
+.op-col{display:grid;gap:10px;align-content:start}
+.operator-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:10px 16px;border-radius:999px;
+  background:rgba(61,220,151,.15);border:1px solid rgba(61,220,151,.55);
+  color:var(--fg);font-weight:700;letter-spacing:.02em;min-height:42px;font-size:.95rem;
+  backdrop-filter:blur(8px);
+}
+.operator-badge.focused{box-shadow:0 0 0 3px rgba(61,220,151,.28);background:rgba(61,220,151,.22)}
 .operator-header {
   display:flex;
   justify-content:space-between;
@@ -804,7 +814,7 @@ summary { cursor:pointer; }
     </section>
     <section id="analysisPage" class="page" aria-labelledby="Analyse">
       <div class="panel">
-        <div class="panel-title"><h2>Analyse</h2><button id="refreshAnalysis" class="ghost" type="button">Rafraîchir</button></div>
+        <div class="panel-title"><h2>Analyse</h2><div class="chip" id="openReport">Rapport</div><button id="refreshAnalysis" class="ghost" type="button">Rafraîchir</button></div>
         <div class="analysis-grid">
           <div class="panel compact list-card">
             <div class="kpi-grid" id="kpiGrid"></div>
@@ -841,6 +851,7 @@ summary { cursor:pointer; }
   const SCHEMA_VERSION = 4;
   const phasesList = ['Prépa chgt de PO','Début de PO','Fin de PO','Vide de ligne'];
   const timedPhases = ['Début de PO','Fin de PO','Vide de ligne'];
+  function newId(){ return 'op_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
   const DEFAULT_STATE = () => ({
     schema_version: SCHEMA_VERSION,
     site: '',
@@ -853,17 +864,17 @@ summary { cursor:pointer; }
     events: [],
     phases: {
       'Prépa chgt de PO': [
-        { name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0 }
+        { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0 }
       ],
       'Début de PO': [
-        { name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0 },
-        { name: 'Changement outillage', targetMin: 6, operatorIndex: 0 }
+        { id: newId(), name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0 },
+        { id: newId(), name: 'Changement outillage', targetMin: 6, operatorIndex: 0 }
       ],
       'Fin de PO': [
-        { name: 'Redémarrage', targetMin: 5, operatorIndex: 0 }
+        { id: newId(), name: 'Redémarrage', targetMin: 5, operatorIndex: 0 }
       ],
       'Vide de ligne': [
-        { name: 'Nettoyage final', targetMin: 4, operatorIndex: 0 }
+        { id: newId(), name: 'Nettoyage final', targetMin: 4, operatorIndex: 0 }
       ]
     },
     alertMin: 12,
@@ -962,16 +973,40 @@ summary { cursor:pointer; }
     merged.defaultOperatorIndex = typeof merged.defaultOperatorIndex === 'number' ? merged.defaultOperatorIndex : 0;
     merged.alertMin = Number.isFinite(merged.alertMin) ? merged.alertMin : 0;
     merged.marks = Array.isArray(merged.marks) ? merged.marks : [];
+    Object.keys(merged.phases).forEach(ph => {
+      merged.phases[ph] = (merged.phases[ph] || []).map(op => ({ ...op, id: op.id || newId() }));
+    });
     merged.completedOpsByOp = merged.completedOpsByOp || {};
     merged.events = Array.isArray(merged.events)
       ? merged.events.map(label => typeof label === 'string' ? label.trim() : '').filter(label => label)
       : [];
     Object.keys(merged.completedOpsByOp).forEach(op => {
-      const phases = merged.completedOpsByOp[op];
+      const phases = typeof merged.completedOpsByOp[op] === 'object' && merged.completedOpsByOp[op] ? merged.completedOpsByOp[op] : {};
       Object.keys(phases).forEach(ph => {
-        if (Array.isArray(phases[ph])) phases[ph] = new Set(phases[ph]);
-        else if (!(phases[ph] instanceof Set)) phases[ph] = new Set(Object.values(phases[ph] || {}));
+        const raw = phases[ph];
+        const asSet = raw instanceof Set ? raw : new Set(Array.isArray(raw) ? raw : Object.values(raw || {}));
+        const ops = merged.phases[ph] || [];
+        const ids = new Set(ops.map(o => o.id));
+        const byName = new Map();
+        ops.forEach(o => {
+          const list = byName.get(o.name) || [];
+          list.push(o.id);
+          byName.set(o.name, list);
+        });
+        const known = new Set();
+        asSet.forEach(val => {
+          if (ids.has(val)) {
+            known.add(val);
+            return;
+          }
+          const list = byName.get(val);
+          if (list && list.length) {
+            known.add(list.shift());
+          }
+        });
+        phases[ph] = known;
       });
+      merged.completedOpsByOp[op] = phases;
     });
     merged.marks = merged.marks.map(m => ({
       t: m.t ?? 0,
@@ -981,7 +1016,8 @@ summary { cursor:pointer; }
       kind: m.kind || 'event',
       note: m.note || '',
       hc: !!m.hc,
-      durationMs: m.durationMs || 0
+      durationMs: m.durationMs || 0,
+      opId: m.opId || null
     }));
     if (!Number.isFinite(merged.elapsedMs)) merged.elapsedMs = 0;
     if (!Number.isFinite(merged.prepaElapsedMs)) merged.prepaElapsedMs = 0;
@@ -1110,50 +1146,71 @@ summary { cursor:pointer; }
     state.operators.forEach((op, idx) => {
       if (!state.multiView && idx !== state.defaultOperatorIndex) return;
       if (!op && idx !== state.defaultOperatorIndex) return;
+
+      const operatorName = getCurrentOperatorName(idx);
+
+      const col = document.createElement('div');
+      col.className = 'op-col';
+      col.dataset.index = idx;
+
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'operator-badge' + (idx === runtime.focusedOperator ? ' focused' : '');
+      badge.textContent = operatorName;
+      badge.addEventListener('click', () => { runtime.focusedOperator = idx; renderOperatorColumns(); });
+      col.appendChild(badge);
+
       const card = document.createElement('div');
-      card.className = 'operator-card';
+      card.className = 'operator-card' + (idx === runtime.focusedOperator ? ' focused' : '');
       card.dataset.index = idx;
-      if (idx === runtime.focusedOperator) card.classList.add('focused');
-      card.addEventListener('click', event => {
-        if (event.target.closest('.op-pill')) return;
+
+      card.addEventListener('click', e => {
+        if (e.target.closest('.op-pill')) return;
         runtime.focusedOperator = idx;
         renderOperatorColumns();
       });
-      const operatorName = getCurrentOperatorName(idx);
+
       const phaseOps = (state.phases[state.activePhase] || []).filter(operation => {
         const assignedIndex = typeof operation.operatorIndex === 'number' ? operation.operatorIndex : state.defaultOperatorIndex;
         return assignedIndex === idx;
       });
+
       const completedSetForPhase = state.completedOpsByOp[operatorName][state.activePhase];
       const completed = completedSetForPhase.size || 0;
       const pct = phaseOps.length ? Math.round((completed/phaseOps.length)*100) : 0;
-      card.innerHTML = `<div class="operator-header"><h3>${escapeHtml(operatorName)}</h3><span class="progress-text">${pct}%</span></div>`;
+
+      card.innerHTML = `<div class="operator-header">
+        <h3>${escapeHtml(operatorName)}</h3>
+        <span class="progress-text">${pct}%</span>
+      </div>`;
+
       const list = document.createElement('div');
       list.className = 'op-list';
       let firstPending = true;
+
       phaseOps.forEach((operation, opIndex) => {
+        if (!operation.id) operation.id = newId();
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = 'op-pill';
-        const completedSet = completedSetForPhase;
-        const isDone = completedSet.has(operation.name);
+        const isDone = completedSetForPhase.has(operation.id || operation.name);
         if (isDone) pill.classList.add('done');
-        if (!isDone && firstPending) {
-          pill.classList.add('current');
-          firstPending = false;
-        }
+        if (!isDone && firstPending) { pill.classList.add('current'); firstPending = false; }
         pill.innerHTML = `<span class="index">${opIndex + 1}</span><span>${escapeHtml(operation.name)}</span><span class="check">✔</span>`;
         pill.addEventListener('click', () => validateOperation(idx, operation));
         list.appendChild(pill);
       });
+
       if (!phaseOps.length) {
         const empty = document.createElement('div');
         empty.className = 'label-muted';
         empty.textContent = 'Aucune opération';
         list.appendChild(empty);
       }
+
       card.appendChild(list);
-      els.opsPhaseChips.appendChild(card);
+      col.appendChild(card);
+      els.opsPhaseChips.appendChild(col);
     });
     if (runtime.shouldScrollToCurrent) {
       runtime.shouldScrollToCurrent = false;
@@ -1175,16 +1232,19 @@ summary { cursor:pointer; }
     const operatorName = getCurrentOperatorName(operatorIndex);
     ensureCompletedStructures();
     const completedSet = state.completedOpsByOp[operatorName][state.activePhase];
-    if (completedSet.has(operation.name)) return;
+    if (!operation.id) operation.id = newId();
+    if (completedSet.has(operation.id)) return;
     const previousTime = state.marks.length ? state.marks[state.marks.length-1].t : 0;
     const nowElapsed = getSessionElapsed();
     const duration = Math.max(0, nowElapsed - previousTime);
-    completedSet.add(operation.name);
+    if (completedSet.has(operation.name)) completedSet.delete(operation.name);
+    completedSet.add(operation.id);
     state.marks.push({
       t: nowElapsed,
       phase: state.activePhase,
       operator: operatorName,
       label: operation.name,
+      opId: operation.id,
       kind: 'op',
       note: '',
       hc: state.activePhase === 'Prépa chgt de PO',
@@ -1773,6 +1833,9 @@ ${buildReportHtml()}
   function buildPhaseRow(phase, operation, index) {
     const tr = document.createElement('tr');
     tr.draggable = true;
+    const opId = operation.id || newId();
+    operation.id = opId;
+    tr.dataset.id = opId;
     tr.innerHTML = `
       <td><input type="checkbox" data-select="${index}"></td>
       <td><input type="text" data-field="name" value="${escapeHtml(operation.name || '')}"></td>
@@ -1836,7 +1899,7 @@ ${buildReportHtml()}
     const phase = btn.dataset.phase;
     const action = btn.dataset.action;
     if (action === 'add') {
-      state.phases[phase].push({ name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex });
+      state.phases[phase].push({ id: newId(), name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex });
       saveState(true);
       buildPhaseTables();
       renderOperatorColumns();
@@ -1896,6 +1959,7 @@ ${buildReportHtml()}
         const matchedIndex = state.operators.findIndex(op => (op || '').trim().toLowerCase() === operatorLabel && operatorLabel);
         const operatorIndex = matchedIndex >= 0 ? matchedIndex : state.defaultOperatorIndex;
         return {
+          id: newId(),
           name: cleanedName || 'Opération',
           targetMin: Number.isFinite(numeric) ? numeric : 0,
           operatorIndex
@@ -1943,8 +2007,8 @@ ${buildReportHtml()}
     tbody.addEventListener('drop', () => {
       const rows = Array.from(tbody.querySelectorAll('tr'));
       state.phases[phase] = rows.map(row => {
-        const idx = Array.from(row.parentElement.children).indexOf(row);
         return {
+          id: row.dataset.id || newId(),
           name: row.querySelector('input[data-field="name"]').value,
           targetMin: Number(row.querySelector('input[data-field="targetMin"]').value) || 0,
           operatorIndex: Number(row.querySelector('select[data-field="operatorIndex"]').value)
@@ -2069,6 +2133,8 @@ ${buildReportHtml()}
     els.lap.setAttribute('aria-haspopup', 'menu');
     els.lap.setAttribute('aria-expanded', 'false');
     els.lap.addEventListener('click', openQuickEventMenu);
+    const openRpt = document.getElementById('openReport');
+    if (openRpt) openRpt.addEventListener('click', exportHtml);
     els.markOp.addEventListener('click', () => {
       if (state.activePhase === 'Prépa chgt de PO') {
         showToast('Checklist Prépa (HC) : validation sans impact chrono', 'info');
@@ -2076,7 +2142,13 @@ ${buildReportHtml()}
       ensureCompletedStructures();
       const ops = state.phases[state.activePhase] || [];
       const operatorIndex = runtime.focusedOperator;
-      const nextOp = ops.find(op => (op.operatorIndex ?? state.defaultOperatorIndex) === operatorIndex && !state.completedOpsByOp[getCurrentOperatorName(operatorIndex)]?.[state.activePhase]?.has(op.name));
+      const completedSet = state.completedOpsByOp[getCurrentOperatorName(operatorIndex)][state.activePhase];
+      const nextOp = ops.find(op => {
+        const assigned = (op.operatorIndex ?? state.defaultOperatorIndex);
+        if (assigned !== operatorIndex) return false;
+        if (!op.id) op.id = newId();
+        return !completedSet.has(op.id);
+      });
       if (nextOp) validateOperation(operatorIndex, nextOp);
     });
     els.end.addEventListener('click', finishChange);
