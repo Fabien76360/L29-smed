@@ -1013,9 +1013,13 @@ summary { cursor:pointer; }
   }
 
   function migrate(data) {
-    const merged = Object.assign(DEFAULT_STATE(), data || {});
+    const base = DEFAULT_STATE();
+    const defaultLine = base.line;
+    const merged = Object.assign(base, data || {});
     merged.schema_version = SCHEMA_VERSION;
-    merged.line = 'L29';
+    if (typeof merged.line !== 'string' || !merged.line.trim()) {
+      merged.line = defaultLine;
+    }
     merged.phases = merged.phases || DEFAULT_STATE().phases;
     merged.operators = Array.isArray(merged.operators) ? merged.operators : ['', '', '', ''];
     while (merged.operators.length < 4) merged.operators.push('');
@@ -1661,9 +1665,10 @@ summary { cursor:pointer; }
     cancelAnimationFrame(runtime.animationFrame);
     updateDisplay();
     showToast('Changement terminé');
-    const poSafe = (state.po && state.po.trim() ? state.po.trim() : 'PO').replace(/[^\w-]+/g, '_');
+    const poSafe = (state.po && state.po.trim() ? state.po.trim() : 'PO').replace(/[^\w-]+/g, '_') || 'PO';
+    const lineSafe = (state.line && state.line.trim() ? state.line.trim() : 'L29').replace(/[^\w-]+/g, '_') || 'L29';
     const stamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
-    const filename = `SMED_${poSafe}_${stamp}.html`;
+    const filename = `SMED_${lineSafe}_${poSafe}_${stamp}.html`;
     await exportHtml({ filename, forceSave: true });
   }
 
@@ -1726,15 +1731,21 @@ summary { cursor:pointer; }
       mark.note || ''
     ]);
     const csv = [headers.join(';')].concat(rows.map(r => r.map(value => `"${String(value).replace(/"/g,'""')}"`).join(';'))).join('\n');
-    downloadFile(`smed_l29_${Date.now()}.csv`, csv, 'text/csv');
+    const rawLine = state.line && state.line.trim() ? state.line.trim() : 'L29';
+    const lineSegment = rawLine.replace(/[^\w-]+/g, '_') || 'L29';
+    const stamp = new Date().toISOString().slice(0,16).replace(/:/g, '-');
+    downloadFile(`smed_${lineSegment}_${stamp}.csv`, csv, 'text/csv');
   }
 
   async function exportHtml(options = {}) {
+    const rawLineLabel = state.line && state.line.trim() ? state.line.trim() : 'L29';
+    const reportLine = escapeHtml(rawLineLabel);
+    const lineSegment = rawLineLabel.replace(/[^\w-]+/g, '_') || 'L29';
     const template = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Rapport SMED L29</title>
+<title>Rapport SMED ${reportLine}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{color-scheme:light;}
@@ -1772,7 +1783,7 @@ body{font-family:"Inter","Segoe UI",sans-serif;margin:40px;background:#f4f6fb;co
 ${buildReportHtml()}
 </body>
 </html>`;
-    const filename = options.filename || `smed_l29_${Date.now()}.html`;
+    const filename = options.filename || `smed_${lineSegment}_${Date.now()}.html`;
     if (options.forceSave && typeof window !== 'undefined' && window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
@@ -2543,7 +2554,11 @@ ${buildReportHtml()}
     closeQuickEventMenu();
     runtime.activePage = pageId;
     els.pages.forEach(page => page.classList.toggle('active', page.id === pageId));
-    els.navButtons.forEach(nav => nav.classList.toggle('active', nav === btn));
+    els.navButtons.forEach(nav => {
+      const active = nav === btn;
+      nav.classList.toggle('active', active);
+      nav.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
     renderAnalysis();
   }
 
