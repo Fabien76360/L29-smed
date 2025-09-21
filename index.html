@@ -29,6 +29,7 @@ body {
   background:radial-gradient(140% 140% at 50% 0%,#1a2b55 0%,#0f1a34 45%,#09112a 100%);
   color:var(--fg);
 }
+body.splash-lock { overflow:hidden; }
 button,input,select,textarea { font:inherit; color:inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
   outline:3px solid var(--accent);
@@ -64,12 +65,6 @@ header {
   letter-spacing:0.08em;
   text-transform:uppercase;
   color:var(--fg);
-}
-.brand-logo {
-  width:44px;
-  height:44px;
-  object-fit:contain;
-  filter:drop-shadow(0 6px 16px rgba(0,0,0,.35));
 }
 .brand-sep {
   width:1px;
@@ -731,49 +726,105 @@ summary { cursor:pointer; }
   color: var(--accent);
   background: rgba(61,220,151,.10);
 }
-.splash-screen {
+#splash {
   position:fixed;
   inset:0;
+  z-index:9999;
   display:flex;
   align-items:center;
   justify-content:center;
-  background:rgba(9,17,42,.94);
-  z-index:9999;
-  transition:opacity .5s ease, visibility 0s linear .5s;
+  padding:48px 16px;
+  background:radial-gradient(120% 120% at 50% 15%,rgba(20,34,74,.95) 0%,rgba(6,12,28,.98) 70%,rgba(3,7,18,1) 100%);
+  transition:opacity .6s ease;
 }
-.splash-screen.hidden {
-  opacity:0;
-  visibility:hidden;
+#splash::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:radial-gradient(circle at center,rgba(61,220,151,.05) 0%,rgba(15,26,52,0) 55%);
   pointer-events:none;
-  transition:opacity .4s ease, visibility 0s linear .4s;
 }
-.splash-screen.no-animate {
-  transition:none !important;
+#splash.is-hiding{
+  opacity:0;
+  pointer-events:none;
 }
-.splash-card {
+.splash-vignette{
+  position:relative;
   display:grid;
-  gap:12px;
+  gap:18px;
   justify-items:center;
-  padding:28px 36px;
-  border-radius:24px;
-  background:rgba(15,26,52,.85);
-  border:1px solid rgba(61,220,151,.35);
-  box-shadow:0 18px 40px rgba(5,10,24,.55);
-  text-align:center;
+  padding:36px clamp(32px,5vw,56px);
+  border-radius:28px;
+  background:linear-gradient(148deg,rgba(15,26,52,.92) 0%,rgba(23,36,71,.88) 100%);
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:0 30px 80px rgba(7,14,33,.55);
+  overflow:hidden;
+  animation:splashZoomIn 900ms cubic-bezier(.16,1,.3,1) forwards;
 }
-.splash-card img {
-  width:96px;
-  height:auto;
-}
-.splash-text {
-  font-size:0.85rem;
-  color:var(--muted);
-  letter-spacing:0.04em;
-}
-.hidden {
-  opacity:0;
-  visibility:hidden;
+.splash-vignette::before{
+  content:"";
+  position:absolute;
+  inset:-35% -20%;
+  background:radial-gradient(circle at 50% 20%,rgba(255,255,255,.12) 0%,rgba(255,255,255,0) 60%);
+  opacity:.35;
   pointer-events:none;
+}
+.splash-vignette::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  box-shadow:0 0 0 0 rgba(61,220,151,.28);
+  animation:splashGlow 2200ms ease-in-out infinite;
+  pointer-events:none;
+}
+.splash-logo-wrap{
+  position:relative;
+  display:grid;
+  justify-items:center;
+  width:clamp(220px,22vw,420px);
+}
+.splash-logo{
+  width:100%;
+  height:auto;
+  filter:drop-shadow(0 18px 32px rgba(0,0,0,.45));
+}
+.splash-logo-fallback{
+  font-weight:800;
+  letter-spacing:.16em;
+  font-size:clamp(2.6rem,8vw,4.5rem);
+}
+.splash-caption{
+  font-size:.9rem;
+  opacity:.7;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.logo-container{
+  display:grid;
+  place-items:center;
+}
+.logo-image{ display:block; }
+.logo-container .logo-fallback-text{
+  display:none;
+}
+.logo-container.logo-missing .logo-image{ display:none; }
+.logo-container.logo-missing .logo-fallback-text{ display:block; }
+.brand-mark{
+  width:44px;
+  height:44px;
+  display:grid;
+  place-items:center;
+}
+.brand-logo{ width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 6px 16px rgba(0,0,0,.35)); }
+.brand-logo-fallback{ font-weight:800; letter-spacing:.12em; font-size:.95rem; }
+@keyframes splashZoomIn{
+  0%{ transform:scale(.84); opacity:0; }
+  100%{ transform:scale(1); opacity:1; }
+}
+@keyframes splashGlow{
+  0%,100%{ box-shadow:0 0 0 0 rgba(61,220,151,.18); }
+  50%{ box-shadow:0 0 25px 10px rgba(61,220,151,.22); }
 }
 @media print {
   body { background:#fff; color:#000; }
@@ -787,17 +838,23 @@ summary { cursor:pointer; }
 </style>
 </head>
 <body>
-<div id="splash" class="splash-screen" role="status" aria-live="polite">
-  <div class="splash-card">
-    <img src="smed-logo.png" alt="Logo SMED">
-    <div class="splash-text">Chargement du tableau de bord…</div>
+<div id="splash" role="dialog" aria-label="Écran de lancement">
+  <div class="splash-vignette">
+    <div class="splash-logo-wrap logo-container">
+      <img src="smed-logo.png" alt="Logo SMED" class="splash-logo logo-image">
+      <span class="splash-logo-fallback logo-fallback-text" aria-hidden="true">SMED</span>
+    </div>
+    <div class="splash-caption">Chargement du tableau de bord…</div>
   </div>
 </div>
 <div class="app">
   <header>
     <div class="top-nav">
       <div class="brand">
-        <img src="smed-logo.png" alt="SMED" class="brand-logo">
+        <div class="brand-mark logo-container">
+          <img src="smed-logo.png" alt="SMED" class="brand-logo logo-image">
+          <span class="brand-logo-fallback logo-fallback-text" aria-hidden="true">SMED</span>
+        </div>
         <span class="brand-sep" aria-hidden="true"></span>
         <span class="brand-line" id="brandLine">L29</span>
       </div>
@@ -973,6 +1030,38 @@ summary { cursor:pointer; }
   const phasesList = ['Prépa chgt de PO','Début de PO','Fin de PO','Vide de ligne'];
   const timedPhases = ['Début de PO','Fin de PO','Vide de ligne'];
   function newId(){ return 'op_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+
+  function setupLogoContainer(container) {
+    if (!container) return;
+    const img = container.querySelector('.logo-image');
+    const fallback = container.querySelector('.logo-fallback-text');
+    if (!img || !fallback) return;
+
+    const showFallback = () => {
+      container.classList.add('logo-missing');
+    };
+
+    const hideFallback = () => {
+      container.classList.remove('logo-missing');
+    };
+
+    if (img.complete) {
+      if (img.naturalWidth === 0) {
+        showFallback();
+      } else {
+        hideFallback();
+      }
+    }
+
+    img.addEventListener('error', showFallback);
+    img.addEventListener('load', () => {
+      if (img.naturalWidth === 0) {
+        showFallback();
+      } else {
+        hideFallback();
+      }
+    });
+  }
   const DEFAULT_STATE = () => ({
     schema_version: SCHEMA_VERSION,
     site: '',
@@ -2617,33 +2706,35 @@ ${buildReportHtml()}
 
   function hideSplash(immediate) {
     if (!els.splash) return;
-    if (els.splash.classList.contains('hidden')) {
-      if (immediate) {
-        els.splash.style.display = 'none';
+    const splashNode = els.splash;
+    const cleanup = () => {
+      document.body.classList.remove('splash-lock');
+      if (splashNode && splashNode.parentNode) {
+        splashNode.parentNode.removeChild(splashNode);
       }
-      return;
-    }
-    els.splash.setAttribute('aria-hidden', 'true');
+      if (els.splash === splashNode) {
+        els.splash = null;
+      }
+    };
+    splashNode.setAttribute('aria-hidden', 'true');
     if (immediate) {
-      els.splash.classList.add('no-animate');
-      els.splash.classList.add('hidden');
-      els.splash.style.display = 'none';
+      cleanup();
       return;
     }
-    els.splash.classList.remove('no-animate');
-    els.splash.classList.add('hidden');
-    setTimeout(() => {
-      if (els.splash) {
-        els.splash.style.display = 'none';
-      }
-    }, 500);
+    splashNode.classList.add('is-hiding');
+    setTimeout(cleanup, 600);
   }
 
   function initSplashScreen() {
+    setupLogoContainer(document.querySelector('.brand-mark.logo-container'));
+
     if (!els.splash) return;
+
+    setupLogoContainer(document.querySelector('.splash-logo-wrap'));
+
     let seen = false;
     try {
-      seen = sessionStorage.getItem('smedSplashSeen') === '1';
+      seen = sessionStorage.getItem('smed_splash_seen') === '1';
     } catch (err) {
       seen = false;
     }
@@ -2652,11 +2743,36 @@ ${buildReportHtml()}
       return;
     }
     try {
-      sessionStorage.setItem('smedSplashSeen', '1');
+      sessionStorage.setItem('smed_splash_seen', '1');
     } catch (err) {
       /* ignore */
     }
-    setTimeout(() => hideSplash(false), 2000);
+
+    document.body.classList.add('splash-lock');
+
+    const tasks = [];
+    const preload = new Image();
+    preload.src = 'smed-logo.png';
+    if (typeof preload.decode === 'function') {
+      tasks.push(preload.decode().catch(() => {}));
+    } else {
+      tasks.push(new Promise(resolve => {
+        if (preload.complete) {
+          resolve();
+        } else {
+          preload.addEventListener('load', () => resolve(), { once: true });
+          preload.addEventListener('error', () => resolve(), { once: true });
+        }
+      }));
+    }
+
+    if (document.fonts && document.fonts.ready) {
+      tasks.push(document.fonts.ready.catch(() => {}));
+    }
+
+    tasks.push(new Promise(resolve => setTimeout(resolve, 2600)));
+
+    Promise.all(tasks).then(() => hideSplash(false)).catch(() => hideSplash(false));
   }
 
   function handleShortcuts(event) {
