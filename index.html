@@ -66,6 +66,7 @@ header {
 .nav-tabs {
   display:flex;
   gap:12px;
+  margin-left:56px;
 }
 .nav-tabs button {
   background:transparent;
@@ -683,6 +684,17 @@ summary { cursor:pointer; }
 .done-group summary::-webkit-details-marker{display:none}
 .done-group .count{opacity:.8; font-variant-numeric:tabular-nums}
 .done-list{display:flex; flex-direction:column; gap:10px; padding-top:8px}
+#openReport{
+  background: var(--accent); color:#021221; font-weight:800;
+  padding:12px 18px; border-radius:999px; box-shadow:0 10px 24px rgba(61,220,151,.25);
+}
+#openReport:hover{ transform: translateY(-1px); }
+.op-pill .note-btn{
+  margin-left:auto; border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06); border-radius:999px;
+  padding:6px 8px; font-size:.8rem; cursor:pointer;
+}
+.op-pill .note-btn.has-note{ border-color: var(--accent); color: var(--accent); }
 @media print {
   body { background:#fff; color:#000; }
   .app { display:block; }
@@ -700,9 +712,9 @@ summary { cursor:pointer; }
     <div class="top-nav">
       <div class="brand">SMED L29</div>
       <div class="nav-tabs" role="tablist">
-        <button type="button" data-target="timerPage" class="active" aria-controls="timerPage" aria-selected="true">Timer</button>
-        <button type="button" data-target="paramsPage" aria-controls="paramsPage" aria-selected="false">Paramètres</button>
+        <button type="button" data-target="timerPage" class="active" aria-controls="timerPage" aria-selected="true">SMED</button>
         <button type="button" data-target="analysisPage" aria-controls="analysisPage" aria-selected="false">Analyse</button>
+        <button type="button" data-target="paramsPage" aria-controls="paramsPage" aria-selected="false">Paramètres</button>
       </div>
       <div class="header-actions">
         <button id="toggleJournal" class="ghost" type="button" aria-pressed="false" title="Afficher/Masquer Journal"><span class="icon">🗂</span>Masquer le journal</button>
@@ -883,24 +895,22 @@ summary { cursor:pointer; }
     events: [],
     phases: {
       'Prépa chgt de PO': [
-        { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0 }
+        { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0, enabled: true }
       ],
       'Début de PO': [
-        { id: newId(), name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0 },
-        { id: newId(), name: 'Changement outillage', targetMin: 6, operatorIndex: 0 }
+        { id: newId(), name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0, enabled: true },
+        { id: newId(), name: 'Changement outillage', targetMin: 6, operatorIndex: 0, enabled: true }
       ],
       'Fin de PO': [
-        { id: newId(), name: 'Redémarrage', targetMin: 5, operatorIndex: 0 }
+        { id: newId(), name: 'Redémarrage', targetMin: 5, operatorIndex: 0, enabled: true }
       ],
       'Vide de ligne': [
-        { id: newId(), name: 'Nettoyage final', targetMin: 4, operatorIndex: 0 }
+        { id: newId(), name: 'Nettoyage final', targetMin: 4, operatorIndex: 0, enabled: true }
       ]
     },
     alertMin: 12,
     elapsedMs: 0,
     prepaElapsedMs: 0,
-    paused: true,
-    pausedTotalMs: 0,
     activePhase: 'Prépa chgt de PO',
     marks: [],
     sessionStart: Date.now(),
@@ -968,8 +978,7 @@ summary { cursor:pointer; }
     journalHidden: false,
     analysisTimeout: null,
     shouldScrollToCurrent: false,
-    quickEventMenu: null,
-    pauseStartedAt: null
+    quickEventMenu: null
   };
 
   function loadState() {
@@ -997,7 +1006,11 @@ summary { cursor:pointer; }
     merged.alertMin = Number.isFinite(merged.alertMin) ? merged.alertMin : 0;
     merged.marks = Array.isArray(merged.marks) ? merged.marks : [];
     Object.keys(merged.phases).forEach(ph => {
-      merged.phases[ph] = (merged.phases[ph] || []).map(op => ({ ...op, id: op.id || newId() }));
+      merged.phases[ph] = (merged.phases[ph] || []).map(op => {
+        const hasEnabled = op && Object.prototype.hasOwnProperty.call(op, 'enabled');
+        const enabled = hasEnabled ? !(op.enabled === false || op.enabled === 0 || op.enabled === '0') : true;
+        return { ...op, id: op.id || newId(), enabled };
+      });
     });
     merged.completedOpsByOp = merged.completedOpsByOp || {};
     merged.events = Array.isArray(merged.events)
@@ -1044,10 +1057,8 @@ summary { cursor:pointer; }
     }));
     if (!Number.isFinite(merged.elapsedMs)) merged.elapsedMs = 0;
     if (!Number.isFinite(merged.prepaElapsedMs)) merged.prepaElapsedMs = 0;
-    merged.pausedTotalMs = Number.isFinite(merged.pausedTotalMs) ? merged.pausedTotalMs : 0;
     if (!Number.isFinite(merged.sessionElapsedMs)) merged.sessionElapsedMs = 0;
     if (!merged.sessionStart) merged.sessionStart = Date.now();
-    if (!('paused' in merged)) merged.paused = true;
     if (!merged.activePhase || !phasesList.includes(merged.activePhase)) merged.activePhase = 'Prépa chgt de PO';
     merged.multiView = merged.multiView ?? true;
     return merged;
@@ -1115,7 +1126,9 @@ summary { cursor:pointer; }
   }
 
   function targetMinutesForPhase(phase) {
-    return (state.phases[phase] || []).reduce((sum, op) => sum + Number(op.targetMin || 0), 0);
+    return (state.phases[phase] || [])
+      .filter(op => op.enabled !== false)
+      .reduce((sum, op) => sum + Number(op.targetMin || 0), 0);
   }
   function totalTargetMinutes() {
     return timedPhases.reduce((sum, phase) => sum + targetMinutesForPhase(phase), 0);
@@ -1195,6 +1208,7 @@ summary { cursor:pointer; }
       });
 
       const phaseOps = (state.phases[state.activePhase] || []).filter(operation => {
+        if (operation.enabled === false) return false;
         const assignedIndex = typeof operation.operatorIndex === 'number' ? operation.operatorIndex : state.defaultOperatorIndex;
         return assignedIndex === idx;
       });
@@ -1223,7 +1237,30 @@ summary { cursor:pointer; }
         pill.type = 'button';
         pill.className = 'op-pill';
         if (isDone) pill.classList.add('done');
-        pill.innerHTML = `<span class="index">${opIndex + 1}</span><span>${escapeHtml(operation.name)}</span><span class="check">✔</span>`;
+        const indexSpan = document.createElement('span');
+        indexSpan.className = 'index';
+        indexSpan.textContent = opIndex + 1;
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = operation.name || '';
+        const checkSpan = document.createElement('span');
+        checkSpan.className = 'check';
+        checkSpan.textContent = '✔';
+        const noteBtn = document.createElement('span');
+        noteBtn.className = 'note-btn';
+        noteBtn.textContent = '📝';
+        noteBtn.title = 'Ajouter une note';
+        if (operationHasNote(operation.id)) {
+          noteBtn.classList.add('has-note');
+        }
+        noteBtn.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleOperationNote(idx, operation);
+        });
+        pill.appendChild(indexSpan);
+        pill.appendChild(nameSpan);
+        pill.appendChild(checkSpan);
+        pill.appendChild(noteBtn);
         pill.addEventListener('click', () => validateOperation(idx, operation));
         return pill;
       };
@@ -1282,6 +1319,64 @@ summary { cursor:pointer; }
     }
   }
 
+  function operationHasNote(opId) {
+    if (!opId) return false;
+    return state.marks.some(mark => (mark.kind === 'note' || mark.kind === 'op') && mark.opId === opId && mark.note && mark.note.trim());
+  }
+
+  function handleOperationNote(operatorIndex, operation) {
+    if (!operation.id) operation.id = newId();
+    const operatorName = getCurrentOperatorName(operatorIndex);
+    const existingOpMark = state.marks.find(mark => mark.kind === 'op' && mark.opId === operation.id);
+    const existingNoteIndex = state.marks.findIndex(mark => mark.kind === 'note' && mark.opId === operation.id);
+    const currentText = existingNoteIndex >= 0
+      ? state.marks[existingNoteIndex].note
+      : existingOpMark?.note || '';
+    const input = prompt(`Note pour ${operation.name}`, currentText || '');
+    if (input === null) return;
+    const trimmed = input.trim();
+    if (!trimmed) {
+      if (existingNoteIndex >= 0) {
+        state.marks.splice(existingNoteIndex, 1);
+      }
+      if (existingOpMark) existingOpMark.note = '';
+      saveState();
+      renderLog();
+      renderOperatorColumns();
+      updateAnalysisDelayed();
+      return;
+    }
+    const timestamp = getSessionElapsed();
+    if (existingNoteIndex >= 0) {
+      const mark = state.marks[existingNoteIndex];
+      mark.note = trimmed;
+      mark.label = operation.name;
+      mark.phase = state.activePhase;
+      mark.operator = operatorName;
+      mark.t = timestamp;
+      mark.hc = state.activePhase === 'Prépa chgt de PO';
+    } else {
+      state.marks.push({
+        t: timestamp,
+        phase: state.activePhase,
+        operator: operatorName,
+        label: operation.name,
+        kind: 'note',
+        note: trimmed,
+        hc: state.activePhase === 'Prépa chgt de PO',
+        durationMs: 0,
+        opId: operation.id
+      });
+    }
+    if (existingOpMark) {
+      existingOpMark.note = trimmed;
+    }
+    saveState();
+    renderLog();
+    renderOperatorColumns();
+    updateAnalysisDelayed();
+  }
+
   function validateOperation(operatorIndex, operation) {
     runtime.focusedOperator = operatorIndex;
     const operatorName = getCurrentOperatorName(operatorIndex);
@@ -1316,7 +1411,7 @@ summary { cursor:pointer; }
     if (!phasesList.includes(phase)) return;
     if (state.activePhase === phase) return;
     const previousPhase = state.activePhase;
-    if (!state.paused && state.runningSince) {
+    if (state.runningSince) {
       const now = Date.now();
       const delta = now - state.runningSince;
       state.sessionElapsedMs += delta;
@@ -1364,72 +1459,53 @@ summary { cursor:pointer; }
   }
 
   function getSessionElapsed() {
-    return state.sessionElapsedMs + (!state.paused && state.runningSince ? Date.now() - state.runningSince : 0);
+    return state.sessionElapsedMs + (state.runningSince ? Date.now() - state.runningSince : 0);
   }
 
-  function toggleTimer() {
+  function startTimer() {
     if (state.activePhase === 'Prépa chgt de PO') {
       showToast('Phase hors chrono : démarrage indisponible', 'info');
       return;
     }
-    state.paused = !state.paused;
-    if (!state.paused) {
-      if (runtime.pauseStartedAt) {
-        state.pausedTotalMs += Date.now() - runtime.pauseStartedAt;
-        runtime.pauseStartedAt = null;
-      }
-      state.runningSince = Date.now();
-      runtime.lastTick = performance.now();
-      state.marks.push({
-        t: getSessionElapsed(),
-        phase: state.activePhase,
-        label: 'Chrono démarré',
-        kind: 'start',
-        hc: false
-      });
-      if (els.start) {
-        els.start.disabled = true;
-        els.start.classList.add('primary');
-        els.start.classList.remove('secondary');
-        els.start.innerHTML = 'En cours';
-      }
-      requestTick();
-      showToast('Chrono démarré');
-    } else {
-      const now = Date.now();
-      if (state.runningSince) {
-        const delta = now - state.runningSince;
-        state.sessionElapsedMs += delta;
-        if (state.activePhase === 'Prépa chgt de PO') {
-          state.prepaElapsedMs += delta;
-        } else {
-          state.elapsedMs += delta;
-        }
-      }
-      state.runningSince = null;
-      runtime.pauseStartedAt = Date.now();
-      state.marks.push({
-        t: getSessionElapsed(),
-        phase: state.activePhase,
-        label: 'Chrono en pause',
-        kind: 'pause',
-        hc: false
-      });
-      showToast('Chrono en pause');
+    if (state.runningSince) return;
+    const alreadyStarted = state.marks.some(mark => mark.kind === 'start');
+    if (alreadyStarted) return;
+    state.sessionStart = Date.now();
+    state.runningSince = Date.now();
+    runtime.lastTick = performance.now();
+    state.marks.push({
+      t: getSessionElapsed(),
+      phase: state.activePhase,
+      label: 'Chrono démarré',
+      kind: 'start',
+      note: '',
+      hc: false,
+      durationMs: 0,
+      operator: ''
+    });
+    if (els.start) {
+      els.start.disabled = true;
+      els.start.classList.add('primary');
+      els.start.classList.remove('secondary');
+      els.start.innerHTML = 'En cours';
     }
+    requestTick();
     saveState();
     renderLog();
     updateDisplay();
+    showToast('Chrono démarré');
   }
 
   function requestTick() {
     cancelAnimationFrame(runtime.animationFrame);
-    runtime.animationFrame = requestAnimationFrame(tick);
+    if (state.runningSince) {
+      runtime.animationFrame = requestAnimationFrame(tick);
+    }
   }
 
   function tick(now) {
     runtime.lastTick = now;
-    if (!state.paused) {
+    if (state.runningSince) {
       updateDisplay();
       runtime.animationFrame = requestAnimationFrame(tick);
     }
@@ -1447,14 +1523,20 @@ summary { cursor:pointer; }
     if (state.activePhase === 'Prépa chgt de PO') {
       els.state.textContent = 'Phase hors chrono';
     } else {
-      els.state.textContent = state.paused ? 'En pause' : 'En cours';
+      if (state.runningSince) {
+        els.state.textContent = 'En cours';
+      } else if (state.marks.some(m => m.kind === 'end')) {
+        els.state.textContent = 'Terminé';
+      } else {
+        els.state.textContent = 'Prêt';
+      }
     }
     els.targetMin.textContent = totalTargetMinutes().toFixed(1);
     els.warnMin.textContent = Number(state.alertMin || (totalTargetMinutes()*0.85)).toFixed(1);
   }
 
   function computeElapsedMs() {
-    if (!state.paused && state.runningSince && state.activePhase !== 'Prépa chgt de PO') {
+    if (state.runningSince && state.activePhase !== 'Prépa chgt de PO') {
       return state.elapsedMs + (Date.now() - state.runningSince);
     }
     return state.elapsedMs;
@@ -1540,28 +1622,27 @@ summary { cursor:pointer; }
     }
   }
 
-  function finishChange() {
-    if (!state.marks.some(m => m.kind === 'end')) {
-      if (runtime.pauseStartedAt) {
-        state.pausedTotalMs += Date.now() - runtime.pauseStartedAt;
-        runtime.pauseStartedAt = null;
+  async function finishChange() {
+    if (state.marks.some(m => m.kind === 'end')) return;
+    if (state.runningSince) {
+      const now = Date.now();
+      const delta = now - state.runningSince;
+      state.sessionElapsedMs += delta;
+      if (state.activePhase === 'Prépa chgt de PO') {
+        state.prepaElapsedMs += delta;
+      } else {
+        state.elapsedMs += delta;
       }
-      addEvent('Fin du changement', { kind: 'end' });
-      state.paused = true;
-      if (state.runningSince) {
-        const now = Date.now();
-        const delta = now - state.runningSince;
-        state.sessionElapsedMs += delta;
-        if (state.activePhase === 'Prépa chgt de PO') {
-          state.prepaElapsedMs += delta;
-        } else {
-          state.elapsedMs += delta;
-        }
-        state.runningSince = null;
-      }
-      updateDisplay();
-      showToast('Changement terminé');
+      state.runningSince = null;
     }
+    addEvent('Fin du changement', { kind: 'end' });
+    cancelAnimationFrame(runtime.animationFrame);
+    updateDisplay();
+    showToast('Changement terminé');
+    const poSafe = (state.po && state.po.trim() ? state.po.trim() : 'PO').replace(/[^\w-]+/g, '_');
+    const stamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
+    const filename = `SMED_${poSafe}_${stamp}.html`;
+    await exportHtml({ filename, forceSave: true });
   }
 
   function renderLog() {
@@ -1599,6 +1680,8 @@ summary { cursor:pointer; }
     if (!Number.isFinite(index)) return;
     state.marks[index].note = cell.textContent.trim();
     saveState();
+    renderOperatorColumns();
+    updateAnalysisDelayed();
   }
 
   function exportCsv() {
@@ -1624,7 +1707,7 @@ summary { cursor:pointer; }
     downloadFile(`smed_l29_${Date.now()}.csv`, csv, 'text/csv');
   }
 
-  function exportHtml() {
+  async function exportHtml(options = {}) {
     const template = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1667,7 +1750,26 @@ body{font-family:"Inter","Segoe UI",sans-serif;margin:40px;background:#f4f6fb;co
 ${buildReportHtml()}
 </body>
 </html>`;
-    downloadFile(`smed_l29_${Date.now()}.html`, template, 'text/html');
+    const filename = options.filename || `smed_l29_${Date.now()}.html`;
+    if (options.forceSave && typeof window !== 'undefined' && window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'Document HTML', accept: { 'text/html': ['.html'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(template);
+        await writable.close();
+        showToast('Rapport exporté');
+        return;
+      } catch (err) {
+        console.error('Export HTML annulé ou impossible', err);
+      }
+    }
+    downloadFile(filename, template, 'text/html');
+    if (options.forceSave) {
+      showToast('Rapport exporté');
+    }
   }
 
   function downloadFile(filename, content, mime) {
@@ -1675,8 +1777,13 @@ ${buildReportHtml()}
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(link.href);
+    requestAnimationFrame(() => {
+      URL.revokeObjectURL(link.href);
+      document.body.removeChild(link);
+    });
   }
 
   function buildReportHtml() {
@@ -1723,7 +1830,6 @@ ${buildReportHtml()}
           <div class="kpi-card"><span>Cible (min)</span><strong>${targetMinutes}</strong></div>
           <div class="kpi-card"><span>Écart</span><strong>${formatDuration(kpi.gap)}</strong></div>
           <div class="kpi-card"><span>Gain potentiel</span><strong>${formatDuration(kpi.potential)}</strong></div>
-          <div class="kpi-card"><span>Temps en pause</span><strong>${formatDuration(kpi.paused)}</strong></div>
         </div>
       </section>
       <section class="section">
@@ -1806,14 +1912,20 @@ ${buildReportHtml()}
     const eventsList = Array.from(events.entries()).map(([label,count]) => ({ label, count })).sort((a,b) => b.count - a.count);
     const prepaMarks = state.marks.filter(m => m.phase === 'Prépa chgt de PO');
     const prepaCompleted = prepaMarks.filter(m => m.kind === 'op').length;
-    const prepaTotal = (state.phases['Prépa chgt de PO'] || []).length || 1;
+    const prepaOps = (state.phases['Prépa chgt de PO'] || []).filter(op => op.enabled !== false);
+    const prepaTotal = prepaOps.length || 1;
+    const prepaNotes = [];
+    prepaMarks.forEach(mark => {
+      if (mark.note && mark.note.trim() && !prepaNotes.includes(mark.note.trim())) {
+        prepaNotes.push(mark.note.trim());
+      }
+    });
     return {
       kpi: {
         total: totalChrono,
         target: targetMs,
         gap: gapMs,
-        potential,
-        paused: state.pausedTotalMs
+        potential
       },
       phases,
       operators,
@@ -1823,7 +1935,7 @@ ${buildReportHtml()}
       prepa: {
         percent: Math.round((prepaCompleted / prepaTotal) * 100),
         duration: state.prepaElapsedMs,
-        notes: prepaMarks.map(m => m.note).filter(Boolean)
+        notes: prepaNotes
       }
     };
   }
@@ -1836,7 +1948,6 @@ ${buildReportHtml()}
       <div class="kpi-card"><span>Cible (min)</span><strong>${target.toFixed(1)}</strong></div>
       <div class="kpi-card"><span>Écart</span><strong class="${analysis.kpi.gap>0 ? 'bad' : ''}">${formatDuration(analysis.kpi.gap)}</strong></div>
       <div class="kpi-card"><span>Gain potentiel</span><strong>${formatDuration(analysis.kpi.potential)}</strong></div>
-      <div class="kpi-card"><span>Temps en pause</span><strong>${formatDuration(analysis.kpi.paused)}</strong></div>
     `;
     els.phaseDistribution.innerHTML = '';
     analysis.phases.forEach(item => {
@@ -1891,7 +2002,7 @@ ${buildReportHtml()}
           <div class="phase-table-wrapper">
             <table class="param-table" data-phase="${phase}">
               <thead>
-                <tr><th></th><th>Opération</th><th>Temps cible (min)</th><th>Opérateur</th><th></th></tr>
+                <tr><th title="Inclure cette opération dans le SMED (décocher si non applicable)">Incluse ?</th><th>Opération</th><th>Temps cible (min)</th><th>Opérateur</th><th></th></tr>
               </thead>
               <tbody></tbody>
               <tfoot><tr><td colspan="5">Σ ${phase}: <strong class="phase-total">0 min</strong></td></tr></tfoot>
@@ -1920,8 +2031,10 @@ ${buildReportHtml()}
     const opId = operation.id || newId();
     operation.id = opId;
     tr.dataset.id = opId;
+    const enabled = operation.enabled !== false;
+    operation.enabled = enabled;
     tr.innerHTML = `
-      <td><input type="checkbox" data-select="${index}"></td>
+      <td><input type="checkbox" data-field="enabled" title="Inclure cette opération dans le SMED (décocher si non applicable)" ${enabled ? 'checked' : ''}></td>
       <td><input type="text" data-field="name" value="${escapeHtml(operation.name || '')}"></td>
       <td><input type="number" step="0.5" min="0" data-field="targetMin" value="${operation.targetMin || 0}"></td>
       <td><select data-field="operatorIndex"></select></td>
@@ -1961,6 +2074,15 @@ ${buildReportHtml()}
     const idx = Array.from(row.parentElement.children).indexOf(row);
     const field = input.dataset.field;
     if (!field) return;
+    if (field === 'enabled') {
+      state.phases[phase][idx].enabled = input.checked;
+      saveState();
+      updatePhaseTotal(input.closest('table'), phase);
+      updateTargets();
+      renderOperatorColumns();
+      updateAnalysisDelayed();
+      return;
+    }
     if (field === 'name') {
       state.phases[phase][idx][field] = input.value;
     } else {
@@ -1983,7 +2105,7 @@ ${buildReportHtml()}
     const phase = btn.dataset.phase;
     const action = btn.dataset.action;
     if (action === 'add') {
-      state.phases[phase].push({ id: newId(), name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex });
+      state.phases[phase].push({ id: newId(), name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex, enabled: true });
       saveState(true);
       buildPhaseTables();
       renderOperatorColumns();
@@ -1991,11 +2113,14 @@ ${buildReportHtml()}
       return;
     }
     const table = els.phaseTables.querySelector(`table[data-phase="${phase}"]`);
-    const selected = Array.from(table.querySelectorAll('tbody tr')).filter(row => row.querySelector('input[type="checkbox"]').checked);
+    const selected = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
+      const checkbox = row.querySelector('input[data-field="enabled"]');
+      return checkbox ? checkbox.checked : false;
+    });
     if (action === 'assign') {
-      const operator = prompt('Index opérateur (1-3) :', state.defaultOperatorIndex + 1);
+      const operator = prompt('Index opérateur (1-4) :', state.defaultOperatorIndex + 1);
       const idx = Number(operator) - 1;
-      if (!Number.isInteger(idx) || idx < 0 || idx > 2) return;
+      if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
       selected.forEach(row => {
         const rowIndex = Array.from(row.parentElement.children).indexOf(row);
         state.phases[phase][rowIndex].operatorIndex = idx;
@@ -2017,8 +2142,8 @@ ${buildReportHtml()}
       updateTargets();
     }
     if (action === 'export-csv') {
-      const rows = state.phases[phase].map(op => `${op.name};${op.targetMin};${getCurrentOperatorName(op.operatorIndex || 0)}`);
-      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, ['operation;temps_min;operateur'].concat(rows).join('\n'), 'text/csv');
+      const rows = state.phases[phase].map(op => `${op.name};${op.targetMin};${getCurrentOperatorName(op.operatorIndex || 0)};${op.enabled === false ? 0 : 1}`);
+      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, ['operation;temps_min;operateur;incluse'].concat(rows).join('\n'), 'text/csv');
     }
     if (action === 'export-json') {
       downloadFile(`phase_${phase.replace(/\s+/g,'_')}.json`, JSON.stringify(state.phases[phase], null, 2), 'application/json');
@@ -2036,17 +2161,23 @@ ${buildReportHtml()}
       const lines = text.split(/\r?\n/).filter(Boolean);
       const entries = lines.slice(1).map(line => {
         if (!line.trim()) return null;
-        const [name, time, operator] = line.split(';');
+        const parts = line.split(';');
+        const name = parts[0];
+        const time = parts[1];
+        const operator = parts[2];
+        const includedRaw = parts[3];
         const cleanedName = (name || '').trim();
         const numeric = Number.parseFloat((time || '').replace(',', '.'));
         const operatorLabel = (operator || '').trim().toLowerCase();
         const matchedIndex = state.operators.findIndex(op => (op || '').trim().toLowerCase() === operatorLabel && operatorLabel);
         const operatorIndex = matchedIndex >= 0 ? matchedIndex : state.defaultOperatorIndex;
+        const enabled = includedRaw == null ? true : includedRaw.trim() !== '0';
         return {
           id: newId(),
           name: cleanedName || 'Opération',
           targetMin: Number.isFinite(numeric) ? numeric : 0,
-          operatorIndex
+          operatorIndex,
+          enabled
         };
       }).filter(Boolean);
       if (entries.length) {
@@ -2063,7 +2194,9 @@ ${buildReportHtml()}
   }
 
   function updatePhaseTotal(table, phase) {
-    const total = state.phases[phase].reduce((sum, op) => sum + Number(op.targetMin || 0), 0);
+    const total = state.phases[phase]
+      .filter(op => op.enabled !== false)
+      .reduce((sum, op) => sum + Number(op.targetMin || 0), 0);
     const cell = table.querySelector('.phase-total');
     if (cell) cell.textContent = `${total.toFixed(1)} min`;
   }
@@ -2091,11 +2224,13 @@ ${buildReportHtml()}
     tbody.addEventListener('drop', () => {
       const rows = Array.from(tbody.querySelectorAll('tr'));
       state.phases[phase] = rows.map(row => {
+        const enabledInput = row.querySelector('input[data-field="enabled"]');
         return {
           id: row.dataset.id || newId(),
           name: row.querySelector('input[data-field="name"]').value,
           targetMin: Number(row.querySelector('input[data-field="targetMin"]').value) || 0,
-          operatorIndex: Number(row.querySelector('select[data-field="operatorIndex"]').value)
+          operatorIndex: Number(row.querySelector('select[data-field="operatorIndex"]').value),
+          enabled: enabledInput ? enabledInput.checked : true
         };
       });
       saveState();
@@ -2212,8 +2347,10 @@ ${buildReportHtml()}
         }
       }
     }
-    if (!state.paused && state.runningSince) {
+    if (state.runningSince) {
       requestTick();
+    } else {
+      cancelAnimationFrame(runtime.animationFrame);
     }
   }
 
@@ -2230,22 +2367,18 @@ ${buildReportHtml()}
           showToast('Phase hors chrono : démarrage indisponible', 'info');
           return;
         }
-        if (state.paused) {
-          toggleTimer();
-          els.start.disabled = true;
-          els.start.innerHTML = 'En cours';
-        }
+        startTimer();
       });
     }
     els.lap.setAttribute('aria-haspopup', 'menu');
     els.lap.setAttribute('aria-expanded', 'false');
     els.lap.addEventListener('click', openQuickEventMenu);
     const openRpt = document.getElementById('openReport');
-    if (openRpt) openRpt.addEventListener('click', exportHtml);
-    els.end.addEventListener('click', () => {
+    if (openRpt) openRpt.addEventListener('click', () => exportHtml());
+    els.end.addEventListener('click', async () => {
       const ok = confirm('Confirmer la fin du changement ?');
       if (!ok) return;
-      finishChange();
+      await finishChange();
     });
     els.reset.addEventListener('click', () => {
       if (!confirm('Réinitialiser la session ?')) return;
@@ -2256,7 +2389,7 @@ ${buildReportHtml()}
       state.prepaElapsedMs = 0;
       state.sessionElapsedMs = 0;
       state.runningSince = null;
-      state.paused = true;
+      state.sessionStart = Date.now();
 
       // 2) Opérations validées -> vidage total
       state.completedOpsByOp = {};
@@ -2264,8 +2397,6 @@ ${buildReportHtml()}
 
       // 3) Repartir en Prépa (HC) et UI cohérente
       state.activePhase = 'Prépa chgt de PO';
-      state.pausedTotalMs = 0;
-      runtime.pauseStartedAt = null;
       if (els.start) {
         els.start.disabled = true;
         els.start.classList.remove('primary');
@@ -2273,6 +2404,7 @@ ${buildReportHtml()}
         els.start.innerHTML = '<span class="icon">▶</span>Démarrer';
       }
       runtime.focusedOperator = state.defaultOperatorIndex || 0;
+      cancelAnimationFrame(runtime.animationFrame);
 
       // 4) Sauvegarde + re-render + recentrage opé courante
       saveState(true);
@@ -2280,7 +2412,7 @@ ${buildReportHtml()}
       refreshAll();
     });
     els.exportCsv.addEventListener('click', exportCsv);
-    els.exportHtml.addEventListener('click', exportHtml);
+    els.exportHtml.addEventListener('click', () => exportHtml());
     els.logTable.addEventListener('input', handleNoteEdit);
     els.mode.addEventListener('change', () => { state.mode = els.mode.value; saveState(); updateDisplay(); });
     els.po.addEventListener('input', () => { state.po = els.po.value; saveState(); });
@@ -2364,10 +2496,6 @@ ${buildReportHtml()}
 
   function handleShortcuts(event) {
     if (event.target && ['INPUT','TEXTAREA','SELECT'].includes(event.target.tagName)) return;
-    if (event.code === 'Space') {
-      event.preventDefault();
-      toggleTimer();
-    }
     if (event.key.toLowerCase() === 'l') {
       event.preventDefault();
       els.lap.click();
