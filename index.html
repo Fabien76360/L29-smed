@@ -690,11 +690,30 @@ summary { cursor:pointer; }
 }
 #openReport:hover{ transform: translateY(-1px); }
 .op-pill .note-btn{
-  margin-left:auto; border:1px solid rgba(255,255,255,.18);
-  background:rgba(255,255,255,.06); border-radius:999px;
-  padding:6px 8px; font-size:.8rem; cursor:pointer;
+  margin-left:auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:8px 12px;
+  min-width:64px;
+  min-height:40px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.10);
+  border-radius:999px;
+  font-size:.9rem;
+  line-height:1;
+  cursor:pointer;
 }
-.op-pill .note-btn.has-note{ border-color: var(--accent); color: var(--accent); }
+.op-pill .note-btn:hover,
+.op-pill .note-btn:focus-visible{
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+.op-pill .note-btn.has-note{
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(61,220,151,.10);
+}
 @media print {
   body { background:#fff; color:#000; }
   .app { display:block; }
@@ -728,7 +747,7 @@ summary { cursor:pointer; }
         <div class="panel">
           <div class="timer-shell">
             <div class="id-row">
-              <div class="field"><label>Ligne<input type="text" value="L29" readonly></label></div>
+              <div class="field"><label>Ligne<input id="line" type="text" placeholder="Code ligne"></label></div>
               <div class="field"><label>PO<input id="po" type="text" placeholder="Ordre de production"></label></div>
               <div class="field"><label>Mode<select id="mode"><option value="up">Chrono croissant</option><option value="down">Chrono décroissant</option></select></label></div>
             </div>
@@ -933,6 +952,7 @@ summary { cursor:pointer; }
     targetMin: document.getElementById('targetMin'),
     warnMin: document.getElementById('warnMin'),
     mode: document.getElementById('mode'),
+    line: document.getElementById('line'),
     po: document.getElementById('po'),
     now: document.getElementById('now'),
     logTable: document.getElementById('logTable'),
@@ -1245,10 +1265,12 @@ summary { cursor:pointer; }
         const checkSpan = document.createElement('span');
         checkSpan.className = 'check';
         checkSpan.textContent = '✔';
-        const noteBtn = document.createElement('span');
+        const noteBtn = document.createElement('button');
+        noteBtn.type = 'button';
         noteBtn.className = 'note-btn';
-        noteBtn.textContent = '📝';
+        noteBtn.setAttribute('aria-label', `Note pour ${operation.name || 'opération'}`);
         noteBtn.title = 'Ajouter une note';
+        noteBtn.textContent = 'Note';
         if (operationHasNote(operation.id)) {
           noteBtn.classList.add('has-note');
         }
@@ -2319,6 +2341,7 @@ ${buildReportHtml()}
   function refreshAll() {
     els.po.value = state.po;
     els.mode.value = state.mode;
+    if (els.line) els.line.value = state.line || '';
     renderPhaseChips();
     renderOperatorColumns();
     updateTargets();
@@ -2361,6 +2384,12 @@ ${buildReportHtml()}
 
   function bindEvents() {
     els.navButtons.forEach(btn => btn.addEventListener('click', () => switchPage(btn.dataset.target, btn)));
+    if (els.line) {
+      els.line.addEventListener('input', () => {
+        state.line = els.line.value;
+        saveState();
+      });
+    }
     if (els.start) {
       els.start.addEventListener('click', () => {
         if (state.activePhase === 'Prépa chgt de PO') {
