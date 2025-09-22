@@ -1090,6 +1090,7 @@ summary { cursor:pointer; }
     alertMin: 12,
     elapsedMs: 0,
     prepaElapsedMs: 0,
+    prepaRunningSince: null,
     activePhase: 'Prépa chgt de PO',
     marks: [],
     sessionStart: Date.now(),
@@ -1243,6 +1244,7 @@ summary { cursor:pointer; }
     }));
     if (!Number.isFinite(merged.elapsedMs)) merged.elapsedMs = 0;
     if (!Number.isFinite(merged.prepaElapsedMs)) merged.prepaElapsedMs = 0;
+    if (!Number.isFinite(merged.prepaRunningSince)) merged.prepaRunningSince = null;
     if (!Number.isFinite(merged.sessionElapsedMs)) merged.sessionElapsedMs = 0;
     if (!merged.sessionStart) merged.sessionStart = Date.now();
     if (!merged.activePhase || !phasesList.includes(merged.activePhase)) merged.activePhase = 'Prépa chgt de PO';
@@ -1400,14 +1402,6 @@ summary { cursor:pointer; }
       });
 
       const completedSetForPhase = state.completedOpsByOp[operatorName][state.activePhase];
-      const completed = completedSetForPhase.size || 0;
-      const pct = phaseOps.length ? Math.round((completed/phaseOps.length)*100) : 0;
-
-      card.innerHTML = `<div class="operator-header">
-          <h3>${escapeHtml(operatorName)}</h3>
-          <span class="progress-text">${pct}%</span>
-        </div>`;
-
       const doneOps = [];
       const todoOps = [];
 
@@ -1417,6 +1411,14 @@ summary { cursor:pointer; }
         const target = isDone ? doneOps : todoOps;
         target.push({ operation, opIndex, isDone });
       });
+
+      const completed = doneOps.length;
+      const pct = phaseOps.length ? Math.min(100, Math.round((completed/phaseOps.length)*100)) : 0;
+
+      card.innerHTML = `<div class="operator-header">
+          <h3>${escapeHtml(operatorName)}</h3>
+          <span class="progress-text">${pct}%</span>
+        </div>`;
 
       const buildPill = (operation, opIndex, isDone) => {
         const pill = document.createElement('button');
@@ -1595,12 +1597,20 @@ summary { cursor:pointer; }
     updateAnalysisDelayed();
   }
 
+  function finalizePrepaSegment(now = Date.now()) {
+    if (!state.prepaRunningSince) return;
+    const delta = Math.max(0, now - state.prepaRunningSince);
+    state.prepaElapsedMs += delta;
+    state.sessionElapsedMs += delta;
+    state.prepaRunningSince = null;
+  }
+
   function changePhase(phase) {
     if (!phasesList.includes(phase)) return;
     if (state.activePhase === phase) return;
     const previousPhase = state.activePhase;
+    const now = Date.now();
     if (state.runningSince) {
-      const now = Date.now();
       const delta = now - state.runningSince;
       state.sessionElapsedMs += delta;
       if (previousPhase === 'Prépa chgt de PO') {
@@ -1609,8 +1619,13 @@ summary { cursor:pointer; }
         state.elapsedMs += delta;
       }
       state.runningSince = now;
+    } else if (previousPhase === 'Prépa chgt de PO') {
+      finalizePrepaSegment(now);
     }
     state.activePhase = phase;
+    if (phase === 'Prépa chgt de PO' && !state.runningSince && !state.prepaRunningSince) {
+      state.prepaRunningSince = now;
+    }
     const hasStarted = state.marks.some(m => m.kind === 'start');
     if (els.start) {
       if (phase === 'Prépa chgt de PO') {
@@ -1647,7 +1662,15 @@ summary { cursor:pointer; }
   }
 
   function getSessionElapsed() {
-    return state.sessionElapsedMs + (state.runningSince ? Date.now() - state.runningSince : 0);
+    const now = Date.now();
+    let total = state.sessionElapsedMs;
+    if (state.runningSince) {
+      total += Math.max(0, now - state.runningSince);
+    }
+    if (state.prepaRunningSince) {
+      total += Math.max(0, now - state.prepaRunningSince);
+    }
+    return total;
   }
 
   function startTimer() {
@@ -1812,8 +1835,8 @@ summary { cursor:pointer; }
 
   async function finishChange() {
     if (state.marks.some(m => m.kind === 'end')) return;
+    const now = Date.now();
     if (state.runningSince) {
-      const now = Date.now();
       const delta = now - state.runningSince;
       state.sessionElapsedMs += delta;
       if (state.activePhase === 'Prépa chgt de PO') {
@@ -1823,6 +1846,7 @@ summary { cursor:pointer; }
       }
       state.runningSince = null;
     }
+    finalizePrepaSegment(now);
     addEvent('Fin du changement', { kind: 'end' });
     cancelAnimationFrame(runtime.animationFrame);
     updateDisplay();
@@ -2270,7 +2294,25 @@ ${buildReportHtml()}
     const field = input.dataset.field;
     if (!field) return;
     if (field === 'enabled') {
-      state.phases[phase][idx].enabled = input.checked;
+      const operation = state.phases[phase][idx];
+      operation.enabled = input.checked;
+      if (!operation.id) operation.id = row.dataset.id || newId();
+      if (!input.checked) {
+        ensureCompletedStructures();
+        const identifiers = [];
+        if (operation.id) identifiers.push(operation.id);
+        if (operation.name) identifiers.push(operation.name);
+        Object.keys(state.completedOpsByOp).forEach(operatorName => {
+          const byPhase = state.completedOpsByOp[operatorName];
+          if (!byPhase) return;
+          const set = byPhase[phase];
+          if (!(set instanceof Set)) return;
+          identifiers.forEach(identifier => {
+            if (!identifier) return;
+            set.delete(identifier);
+          });
+        });
+      }
       saveState();
       updatePhaseTotal(input.closest('table'), phase);
       updateTargets();
@@ -2522,6 +2564,11 @@ ${buildReportHtml()}
     els.mode.value = state.mode;
     if (els.line) els.line.value = state.line || '';
     updateBrandLine();
+    let prepaUpdated = false;
+    if (state.activePhase === 'Prépa chgt de PO' && !state.runningSince && !state.prepaRunningSince) {
+      state.prepaRunningSince = Date.now();
+      prepaUpdated = true;
+    }
     renderPhaseChips();
     renderOperatorColumns();
     updateTargets();
@@ -2554,6 +2601,9 @@ ${buildReportHtml()}
       requestTick();
     } else {
       cancelAnimationFrame(runtime.animationFrame);
+    }
+    if (prepaUpdated) {
+      saveState();
     }
   }
 
@@ -2593,12 +2643,15 @@ ${buildReportHtml()}
     els.reset.addEventListener('click', () => {
       if (!confirm('Réinitialiser la session ?')) return;
 
+      finalizePrepaSegment();
+
       // 1) Chrono & journal
       state.marks = [];
       state.elapsedMs = 0;
       state.prepaElapsedMs = 0;
       state.sessionElapsedMs = 0;
       state.runningSince = null;
+      state.prepaRunningSince = null;
       state.sessionStart = Date.now();
 
       // 2) Opérations validées -> vidage total
