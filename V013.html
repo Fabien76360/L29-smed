@@ -2352,7 +2352,17 @@ ${buildReportHtml()}
     if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      const text = e.target.result;
+      const buffer = e.target.result;
+      const bytes = new Uint8Array(buffer);
+      let text;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        if (text.includes('\uFFFD')) {
+          throw new Error('Detected replacement characters after UTF-8 decode');
+        }
+      } catch (err) {
+        text = new TextDecoder('windows-1252').decode(bytes);
+      }
       const lines = text.split(/\r?\n/).filter(Boolean);
       const entries = lines.slice(1).map(line => {
         if (!line.trim()) return null;
@@ -2384,7 +2394,7 @@ ${buildReportHtml()}
         updateAnalysisDelayed();
       }
     };
-    reader.readAsText(file, 'utf-8');
+    reader.readAsArrayBuffer(file);
     input.value = '';
   }
 
