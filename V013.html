@@ -630,7 +630,27 @@ tfoot td { font-weight:700; }
 .param-table tbody tr.dragging { opacity:.4; }
 .row-tools { display:flex; gap:8px; }
 .batch-actions { display:flex; flex-wrap:wrap; gap:10px; }
-.import-group { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.import-group {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:12px 18px;
+  border-radius:var(--radius);
+  border:1px solid rgba(255,255,255,.18);
+  background:transparent;
+  font-weight:600;
+  cursor:pointer;
+  min-height:48px;
+  color:inherit;
+  transition:color .2s ease, border-color .2s ease;
+}
+.import-group:hover,
+.import-group:focus-within {
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.import-group input[type="file"] { display:none; }
 textarea { background:rgba(15,26,52,.8); border:1px solid rgba(255,255,255,.12); border-radius:var(--radius); padding:12px; min-height:110px; }
 summary { cursor:pointer; }
 /* Analysis */
@@ -1896,7 +1916,7 @@ summary { cursor:pointer; }
     const rawLine = state.line && state.line.trim() ? state.line.trim() : 'L29';
     const lineSegment = rawLine.replace(/[^\w-]+/g, '_') || 'L29';
     const stamp = new Date().toISOString().slice(0,16).replace(/:/g, '-');
-    downloadFile(`smed_${lineSegment}_${stamp}.csv`, csv, 'text/csv');
+    downloadFile(`smed_${lineSegment}_${stamp}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
   }
 
   async function exportHtml(options = {}) {
@@ -2190,7 +2210,7 @@ ${buildReportHtml()}
             <button type="button" class="ghost" data-phase="${phase}" data-action="add">Ajouter une opération</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="assign">Définir opérateur</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="time">Définir temps</button>
-            <label class="import-group">Importer CSV<input type="file" data-phase="${phase}" accept=".csv" style="display:none"></label>
+            <label class="import-group">Importer CSV<input type="file" data-phase="${phase}" accept=".csv"></label>
             <button type="button" class="ghost" data-phase="${phase}" data-action="export-csv">Exporter CSV</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="export-json">Exporter JSON</button>
           </div>
@@ -2338,7 +2358,8 @@ ${buildReportHtml()}
     }
     if (action === 'export-csv') {
       const rows = state.phases[phase].map(op => `${op.name};${op.targetMin};${getCurrentOperatorName(op.operatorIndex || 0)};${op.enabled === false ? 0 : 1}`);
-      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, ['operation;temps_min;operateur;incluse'].concat(rows).join('\n'), 'text/csv');
+      const csvContent = ['operation;temps_min;operateur;incluse'].concat(rows).join('\n');
+      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, `\uFEFF${csvContent}`, 'text/csv;charset=utf-8');
     }
     if (action === 'export-json') {
       downloadFile(`phase_${phase.replace(/\s+/g,'_')}.json`, JSON.stringify(state.phases[phase], null, 2), 'application/json');
@@ -2352,16 +2373,12 @@ ${buildReportHtml()}
     if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      const buffer = e.target.result;
-      const bytes = new Uint8Array(buffer);
-      let text;
-      try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        if (text.includes('\uFFFD')) {
-          throw new Error('Detected replacement characters after UTF-8 decode');
-        }
-      } catch (err) {
-        text = new TextDecoder('windows-1252').decode(bytes);
+      let text = e.target.result;
+      if (typeof text !== 'string') {
+        text = new TextDecoder('utf-8').decode(text);
+      }
+      if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.slice(1);
       }
       const lines = text.split(/\r?\n/).filter(Boolean);
       const entries = lines.slice(1).map(line => {
@@ -2394,7 +2411,7 @@ ${buildReportHtml()}
         updateAnalysisDelayed();
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsText(file, 'utf-8');
     input.value = '';
   }
 
