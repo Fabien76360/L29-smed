@@ -1836,9 +1836,9 @@ summary { cursor:pointer; }
 
   async function finishChange() {
     if (state.marks.some(m => m.kind === 'end')) return;
-    const now = Date.now();
+    const nowMs = Date.now();
     if (state.runningSince) {
-      const delta = now - state.runningSince;
+      const delta = nowMs - state.runningSince;
       state.sessionElapsedMs += delta;
       if (state.activePhase === 'Prépa chgt de PO') {
         state.prepaElapsedMs += delta;
@@ -1847,14 +1847,21 @@ summary { cursor:pointer; }
       }
       state.runningSince = null;
     }
-    finalizePrepaSegment(now);
+    finalizePrepaSegment(nowMs);
     addEvent('Fin du changement', { kind: 'end' });
     cancelAnimationFrame(runtime.animationFrame);
     updateDisplay();
     showToast('Changement terminé');
-    const poSafe = (state.po && state.po.trim() ? state.po.trim() : 'PO').replace(/[^\w-]+/g, '_') || 'PO';
-    const lineSafe = (state.line && state.line.trim() ? state.line.trim() : 'L29').replace(/[^\w-]+/g, '_') || 'L29';
-    const stamp = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
+    const now = new Date(nowMs);
+    const pad = value => String(value).padStart(2, '0');
+    const sanitizeSegment = (value, fallback) => {
+      const base = value && value.trim() ? value.trim() : fallback;
+      const normalized = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return normalized.replace(/[^A-Za-z0-9_-]+/g, '_') || fallback;
+    };
+    const poSafe = sanitizeSegment(state.po, 'PO');
+    const lineSafe = sanitizeSegment(state.line, 'L29');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}`;
     const filename = `SMED_${lineSafe}_${poSafe}_${stamp}.html`;
     await exportHtml({ filename, forceSave: true });
   }
@@ -1928,6 +1935,7 @@ summary { cursor:pointer; }
     const rawLineLabel = state.line && state.line.trim() ? state.line.trim() : 'L29';
     const reportLine = escapeHtml(rawLineLabel);
     const lineSegment = rawLineLabel.replace(/[^\w-]+/g, '_') || 'L29';
+    const reportContent = buildReportHtml();
     const template = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1967,7 +1975,7 @@ body{font-family:"Inter","Segoe UI",sans-serif;margin:40px;background:#f4f6fb;co
 </style>
 </head>
 <body>
-${buildReportHtml()}
+${reportContent}
 </body>
 </html>`;
     const filename = options.filename || `smed_${lineSegment}_${Date.now()}.html`;
@@ -1984,6 +1992,9 @@ ${buildReportHtml()}
         return;
       } catch (err) {
         console.error('Export HTML annulé ou impossible', err);
+        if (err && err.name === 'AbortError') {
+          return;
+        }
       }
     }
     downloadFile(filename, template, 'text/html');
