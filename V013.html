@@ -350,7 +350,7 @@ button:not(:disabled):active { transform:translateY(1px); }
   border-radius:999px;
   background:rgba(255,255,255,.3);
 }
-.phase-chip[data-phase="Prépa chgt de PO"] .dot { background:var(--warn); }
+.phase-chip[data-phase="Activité CHGT de PO"] .dot { background:var(--warn); }
 .phase-chip[data-phase="Début de PO"] .dot { background:#7ad3ff; }
 .phase-chip[data-phase="Fin de PO"] .dot { background:#9b8dff; }
 .phase-chip[data-phase="Vide de ligne"] .dot { background:#ff7ad9; }
@@ -630,7 +630,27 @@ tfoot td { font-weight:700; }
 .param-table tbody tr.dragging { opacity:.4; }
 .row-tools { display:flex; gap:8px; }
 .batch-actions { display:flex; flex-wrap:wrap; gap:10px; }
-.import-group { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.import-group {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:12px 18px;
+  border-radius:var(--radius);
+  border:1px solid rgba(255,255,255,.18);
+  background:transparent;
+  font-weight:600;
+  cursor:pointer;
+  min-height:48px;
+  color:inherit;
+  transition:color .2s ease, border-color .2s ease;
+}
+.import-group:hover,
+.import-group:focus-within {
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.import-group input[type="file"] { display:none; }
 textarea { background:rgba(15,26,52,.8); border:1px solid rgba(255,255,255,.12); border-radius:var(--radius); padding:12px; min-height:110px; }
 summary { cursor:pointer; }
 /* Analysis */
@@ -835,6 +855,28 @@ summary { cursor:pointer; }
   .page { display:block !IMPORTANT; }
   .ops-columns, .kpi-grid, .bar-chart { page-break-inside:avoid; }
 }
+/* PATCH SMED — styles opérateur */
+.operator-header .meta-line{ display:flex; align-items:center; gap:10px; font-variant-numeric: tabular-nums; }
+.operator-header .meta-line .time{ font-weight:700; }
+.operator-header .meter{
+  height:4px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:6px;
+}
+.operator-header .meter .fill{ height:100%; background:var(--accent); width:0%; transition:width .25s ease; }
+.operator-card .op-pill.current{ box-shadow:0 0 0 2px rgba(61,220,151,.45), 0 0 16px rgba(61,220,151,.25) inset; }
+.operator-card .op-pill.current::before{ content:"▶"; margin-right:8px; opacity:.9; }
+.badge.time-ok{ color:var(--accent); }
+.badge.time-warn{ color:var(--warn); }
+.badge.time-bad{ color:var(--danger); }
+.ops-toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+/* PATCH op-event */
+.op-evt-btn{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:999px;
+  background:rgba(61,220,151,.12);
+  border:1px solid rgba(61,220,151,.35);
+  color:var(--fg); font-size:.85rem; cursor:pointer;
+}
+.op-evt-btn:hover{ box-shadow:0 0 0 2px rgba(61,220,151,.25); }
 </style>
 </head>
 <body>
@@ -900,7 +942,8 @@ summary { cursor:pointer; }
                 </div>
                 <div class="main-actions">
                   <button id="start" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
-                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement rapide</button>
+                  <!-- PATCH op-event: libellé bouton mis à jour -->
+                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Évènement Hors changement</button>
                   <button id="end" class="warn" type="button"><span class="icon">■</span>Fin du changement</button>
                   <button id="reset" class="danger" type="button"><span class="icon">↺</span>Reset session</button>
                 </div>
@@ -908,6 +951,12 @@ summary { cursor:pointer; }
               <div class="progress-bar" id="progress" aria-hidden="true"><div class="progress-value"></div></div>
               <div class="chip-row" id="phaseChips" role="tablist"></div>
               <div class="label-muted" id="now"></div>
+            </div>
+            <!-- PATCH SMED — toolbar opérateurs -->
+            <div id="opsToolbar" class="ops-toolbar" aria-label="Outils affichage opérations">
+              <!-- PATCH rm-toggle: suppression du toggle "Montrer seulement la courante" -->
+              <button id="undoLast" type="button" class="ghost">↺ Annuler dernière</button>
+              <span id="hcMini" class="badge" style="display:none;"></span>
             </div>
             <div class="ops-columns" id="opsPhaseChips"></div>
           </div>
@@ -1027,7 +1076,7 @@ summary { cursor:pointer; }
 (() => {
   const STORAGE_KEY = 'smed_timer_v3';
   const SCHEMA_VERSION = 4;
-  const phasesList = ['Prépa chgt de PO','Début de PO','Fin de PO','Vide de ligne'];
+  const phasesList = ['Activité CHGT de PO','Début de PO','Fin de PO','Vide de ligne'];
   const timedPhases = ['Début de PO','Fin de PO','Vide de ligne'];
   function newId(){ return 'op_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 
@@ -1071,9 +1120,11 @@ summary { cursor:pointer; }
     operators: ['Opérateur A','', '', ''],
     defaultOperatorIndex: 0,
     multiView: true,
+    // PATCH SMED — affichage courant only
+    _onlyCurrent: false,
     events: [],
     phases: {
-      'Prépa chgt de PO': [
+      'Activité CHGT de PO': [
         { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0, enabled: true }
       ],
       'Début de PO': [
@@ -1090,7 +1141,7 @@ summary { cursor:pointer; }
     alertMin: 12,
     elapsedMs: 0,
     prepaElapsedMs: 0,
-    activePhase: 'Prépa chgt de PO',
+    activePhase: 'Activité CHGT de PO',
     marks: [],
     sessionStart: Date.now(),
     runningSince: null,
@@ -1202,6 +1253,8 @@ summary { cursor:pointer; }
     merged.events = Array.isArray(merged.events)
       ? merged.events.map(label => typeof label === 'string' ? label.trim() : '').filter(label => label)
       : [];
+    // PATCH SMED — affichage courant only
+    merged._onlyCurrent = !!merged._onlyCurrent;
     Object.keys(merged.completedOpsByOp).forEach(op => {
       const phases = typeof merged.completedOpsByOp[op] === 'object' && merged.completedOpsByOp[op] ? merged.completedOpsByOp[op] : {};
       Object.keys(phases).forEach(ph => {
@@ -1232,7 +1285,7 @@ summary { cursor:pointer; }
     });
     merged.marks = merged.marks.map(m => ({
       t: m.t ?? 0,
-      phase: m.phase || merged.activePhase || 'Prépa chgt de PO',
+      phase: m.phase || merged.activePhase || 'Activité CHGT de PO',
       operator: m.operator || undefined,
       label: m.label || '',
       kind: m.kind || 'event',
@@ -1245,7 +1298,7 @@ summary { cursor:pointer; }
     if (!Number.isFinite(merged.prepaElapsedMs)) merged.prepaElapsedMs = 0;
     if (!Number.isFinite(merged.sessionElapsedMs)) merged.sessionElapsedMs = 0;
     if (!merged.sessionStart) merged.sessionStart = Date.now();
-    if (!merged.activePhase || !phasesList.includes(merged.activePhase)) merged.activePhase = 'Prépa chgt de PO';
+    if (!merged.activePhase || !phasesList.includes(merged.activePhase)) merged.activePhase = 'Activité CHGT de PO';
     merged.multiView = merged.multiView ?? true;
     return merged;
   }
@@ -1342,6 +1395,41 @@ summary { cursor:pointer; }
     return state.operators[index] || `Opérateur ${index+1}`;
   }
 
+  // PATCH SMED — stats opérateur/phase
+  function computeOpPhaseStats(operatorIndex, phase){
+    const operatorName = getCurrentOperatorName(operatorIndex);
+    const ops = (state.phases[phase] || []).filter(o => o.enabled !== false)
+      .filter(o => (typeof o.operatorIndex === 'number' ? o.operatorIndex : state.defaultOperatorIndex) === operatorIndex);
+
+    const total = ops.length;
+    // Cible = somme des targetMin de ses ops incluses
+    const targetMs = ops.reduce((s,o) => s + (Number(o.targetMin||0)*60000), 0);
+
+    // Réalisées (Set déjà maintenu par phase)
+    ensureCompletedStructures();
+    const doneSet = (state.completedOpsByOp[operatorName] && state.completedOpsByOp[operatorName][phase]) || new Set();
+    const done = ops.reduce((c,o)=> c + (doneSet.has(o.id||o.name) ? 1 : 0), 0);
+
+    // Temps réel attribué à cet opérateur sur la phase (hors HC)
+    let realMs = 0;
+    let prev = 0, contextPhase = state.marks.length ? state.marks[0].phase : state.activePhase;
+    state.marks.forEach(m=>{
+      const dur = m.durationMs || Math.max(0, m.t - prev);
+      const isPhaseChange = m.kind==='event' && m.label?.toLowerCase().includes('changement de phase');
+      const effectivePhase = isPhaseChange ? contextPhase : m.phase;
+      if (effectivePhase === phase && phase !== 'Activité CHGT de PO' && m.operator === operatorName){
+        if (m.kind === 'op' || m.kind === 'event') realMs += dur;
+      }
+      prev = m.t;
+      contextPhase = m.phase;
+    });
+
+    const percent = total ? Math.round((done/total)*100) : 0;
+    const ratio = targetMs ? (realMs/targetMs) : 0;
+
+    return {done,total,realMs,targetMs,percent,ratio};
+  }
+
   function renderPhaseChips() {
     els.phaseChips.innerHTML = '';
     phasesList.forEach(phase => {
@@ -1349,17 +1437,31 @@ summary { cursor:pointer; }
       btn.type = 'button';
       btn.className = 'phase-chip' + (state.activePhase === phase ? ' active' : '');
       btn.dataset.phase = phase;
-      btn.innerHTML = `<span class="dot"></span><span>${phase}${phase === 'Prépa chgt de PO' ? ' (HC)' : ''}</span>`;
+      btn.innerHTML = `<span class="dot"></span><span>${phase}${phase === 'Activité CHGT de PO' ? ' (HC)' : ''}</span>`;
       btn.addEventListener('click', () => {
         changePhase(phase);
       });
       els.phaseChips.appendChild(btn);
     });
+    // PATCH SMED — mini compteur HC
+    const hcBadge = document.getElementById('hcMini');
+    if (hcBadge){
+      if (state.activePhase === 'Activité CHGT de PO'){
+        const ops = (state.phases['Activité CHGT de PO'] || []).filter(o=>o.enabled !== false);
+        const total = ops.length || 0;
+        const done = state.marks.filter(m => m.phase === 'Activité CHGT de PO' && m.kind === 'op').length;
+        hcBadge.textContent = `HC : ${done}/${total} · ${formatDuration(state.prepaElapsedMs)}`;
+        hcBadge.style.display = 'inline-block';
+      }else{
+        hcBadge.style.display = 'none';
+      }
+    }
   }
 
   function renderOperatorColumns() {
     ensureCompletedStructures();
     els.opsPhaseChips.innerHTML = '';
+    // PATCH rm-toggle: logique "seulement la courante" retirée
     if (!Number.isInteger(runtime.focusedOperator)) runtime.focusedOperator = state.defaultOperatorIndex;
     if (runtime.focusedOperator < 0 || runtime.focusedOperator >= state.operators.length) runtime.focusedOperator = state.defaultOperatorIndex;
     if (!state.multiView) runtime.focusedOperator = state.defaultOperatorIndex;
@@ -1372,6 +1474,13 @@ summary { cursor:pointer; }
 
       const operatorName = getCurrentOperatorName(idx);
 
+      // PATCH SMED — stats en-tête opérateur
+      const stats = computeOpPhaseStats(idx, state.activePhase);
+      const ratio = stats.targetMs ? (stats.realMs / stats.targetMs) : 0;
+      let timeClass = 'time-ok';
+      if (ratio > 1) timeClass = 'time-bad';
+      else if (ratio > 0.85) timeClass = 'time-warn';
+
       const col = document.createElement('div');
       col.className = 'op-col';
       col.dataset.index = idx;
@@ -1382,6 +1491,17 @@ summary { cursor:pointer; }
       badge.textContent = operatorName;
       badge.addEventListener('click', () => { runtime.focusedOperator = idx; renderOperatorColumns(); });
       col.appendChild(badge);
+
+      // PATCH op-event — pastille sous le nom
+      const evtBtn = document.createElement('button');
+      evtBtn.type = 'button';
+      evtBtn.className = 'op-evt-btn';
+      evtBtn.textContent = "Évènement HC";
+      evtBtn.addEventListener('click', (e)=> {
+        e.stopPropagation();
+        openOperatorEventMenu(idx, evtBtn);
+      });
+      col.appendChild(evtBtn);
 
       const card = document.createElement('div');
       card.className = 'operator-card' + (idx === runtime.focusedOperator ? ' focused' : '');
@@ -1400,12 +1520,19 @@ summary { cursor:pointer; }
       });
 
       const completedSetForPhase = state.completedOpsByOp[operatorName][state.activePhase];
-      const completed = completedSetForPhase.size || 0;
-      const pct = phaseOps.length ? Math.round((completed/phaseOps.length)*100) : 0;
 
       card.innerHTML = `<div class="operator-header">
           <h3>${escapeHtml(operatorName)}</h3>
-          <span class="progress-text">${pct}%</span>
+          <span class="progress-text">${stats.percent}%</span>
+          <div class="meta-line" style="grid-column:1/-1;">
+            <span class="label-muted">${stats.percent}%</span>
+            <span class="time badge ${timeClass}">
+              ${formatDuration(stats.realMs)} / ${formatDuration(stats.targetMs)}
+            </span>
+          </div>
+          <div class="meter" style="grid-column:1/-1;">
+            <div class="fill" style="width:${Math.min(100, Math.round((stats.realMs/(stats.targetMs||1))*100))}%;"></div>
+          </div>
         </div>`;
 
       const doneOps = [];
@@ -1542,7 +1669,7 @@ summary { cursor:pointer; }
       mark.phase = state.activePhase;
       mark.operator = operatorName;
       mark.t = timestamp;
-      mark.hc = state.activePhase === 'Prépa chgt de PO';
+      mark.hc = state.activePhase === 'Activité CHGT de PO';
     } else {
       state.marks.push({
         t: timestamp,
@@ -1551,7 +1678,7 @@ summary { cursor:pointer; }
         label: operation.name,
         kind: 'note',
         note: trimmed,
-        hc: state.activePhase === 'Prépa chgt de PO',
+        hc: state.activePhase === 'Activité CHGT de PO',
         durationMs: 0,
         opId: operation.id
       });
@@ -1585,7 +1712,7 @@ summary { cursor:pointer; }
       opId: operation.id,
       kind: 'op',
       note: '',
-      hc: state.activePhase === 'Prépa chgt de PO',
+      hc: state.activePhase === 'Activité CHGT de PO',
       durationMs: duration
     });
     saveState();
@@ -1603,7 +1730,7 @@ summary { cursor:pointer; }
       const now = Date.now();
       const delta = now - state.runningSince;
       state.sessionElapsedMs += delta;
-      if (previousPhase === 'Prépa chgt de PO') {
+      if (previousPhase === 'Activité CHGT de PO') {
         state.prepaElapsedMs += delta;
       } else {
         state.elapsedMs += delta;
@@ -1613,7 +1740,7 @@ summary { cursor:pointer; }
     state.activePhase = phase;
     const hasStarted = state.marks.some(m => m.kind === 'start');
     if (els.start) {
-      if (phase === 'Prépa chgt de PO') {
+      if (phase === 'Activité CHGT de PO') {
         els.start.disabled = true;
         els.start.classList.remove('primary');
         els.start.classList.add('secondary');
@@ -1636,7 +1763,7 @@ summary { cursor:pointer; }
       phase,
       label: `Changement de phase vers ${phase}`,
       kind: 'event',
-      hc: phase === 'Prépa chgt de PO'
+      hc: phase === 'Activité CHGT de PO'
     });
     renderPhaseChips();
     renderOperatorColumns();
@@ -1651,7 +1778,7 @@ summary { cursor:pointer; }
   }
 
   function startTimer() {
-    if (state.activePhase === 'Prépa chgt de PO') {
+    if (state.activePhase === 'Activité CHGT de PO') {
       showToast('Phase hors chrono : démarrage indisponible', 'info');
       return;
     }
@@ -1708,7 +1835,7 @@ summary { cursor:pointer; }
     const pct = targetMs ? Math.min(100, (currentElapsed/targetMs)*100) : 0;
     els.progress.style.width = `${Math.min(100, pct)}%`;
     els.progress.style.background = currentElapsed <= warnMs ? 'var(--accent)' : currentElapsed <= targetMs ? 'var(--warn)' : 'var(--danger)';
-    if (state.activePhase === 'Prépa chgt de PO') {
+    if (state.activePhase === 'Activité CHGT de PO') {
       els.state.textContent = 'Phase hors chrono';
     } else {
       if (state.runningSince) {
@@ -1724,7 +1851,7 @@ summary { cursor:pointer; }
   }
 
   function computeElapsedMs() {
-    if (state.runningSince && state.activePhase !== 'Prépa chgt de PO') {
+    if (state.runningSince && state.activePhase !== 'Activité CHGT de PO') {
       return state.elapsedMs + (Date.now() - state.runningSince);
     }
     return state.elapsedMs;
@@ -1738,7 +1865,7 @@ summary { cursor:pointer; }
       label,
       kind: options.kind || 'event',
       note: options.note || '',
-      hc: state.activePhase === 'Prépa chgt de PO',
+      hc: state.activePhase === 'Activité CHGT de PO',
       durationMs: 0
     });
     saveState();
@@ -1810,13 +1937,70 @@ summary { cursor:pointer; }
     }
   }
 
+  // PATCH op-event — ouvre le menu d'événements pour 1 opérateur
+  function openOperatorEventMenu(operatorIndex, anchorEl){
+    closeQuickEventMenu();
+    const available = state.events.filter(l => l && l.trim());
+    const menu = document.createElement('div');
+    menu.className = 'quick-event-menu';
+    menu.setAttribute('role','menu');
+
+    const add = (label) => {
+      addOperatorHCEvent(operatorIndex, label);
+      closeQuickEventMenu();
+    };
+
+    if (available.length){
+      available.forEach(label=>{
+        const b = document.createElement('button');
+        b.type='button'; b.textContent=label; b.addEventListener('click', ()=>add(label));
+        menu.appendChild(b);
+      });
+    }
+    const custom = document.createElement('button');
+    custom.type='button'; custom.textContent='Autre…';
+    custom.addEventListener('click', ()=>{
+      const manual = prompt("Libellé de l'événement HC :");
+      if (manual && manual.trim()) add(manual.trim());
+    });
+    menu.appendChild(custom);
+
+    document.body.appendChild(menu);
+    const r = anchorEl.getBoundingClientRect();
+    menu.style.top = `${r.bottom + window.scrollY + 8}px`;
+    menu.style.left = `${r.left + window.scrollX}px`;
+    runtime.quickEventMenu = menu;
+    document.addEventListener('click', handleQuickEventOutside, true);
+    document.addEventListener('keydown', handleQuickEventKeydown);
+  }
+
+  // PATCH op-event — enregistre l'événement HC pour l'opérateur
+  function addOperatorHCEvent(operatorIndex, label){
+    const operatorName = getCurrentOperatorName(operatorIndex);
+    state.marks.push({
+      t: getSessionElapsed(),
+      phase: 'Activité CHGT de PO',
+      operator: operatorName,
+      label: label,
+      kind: 'event',
+      note: '',
+      hc: true,
+      durationMs: 0
+    });
+    saveState();
+    renderLog();
+    renderOperatorColumns();
+    updateAnalysisDelayed();
+    showToast(`Événement HC ajouté pour ${operatorName}`);
+  }
+
   async function finishChange() {
     if (state.marks.some(m => m.kind === 'end')) return;
     if (state.runningSince) {
       const now = Date.now();
       const delta = now - state.runningSince;
       state.sessionElapsedMs += delta;
-      if (state.activePhase === 'Prépa chgt de PO') {
+      if (state.activePhase === 'Activité CHGT de PO') {
         state.prepaElapsedMs += delta;
       } else {
         state.elapsedMs += delta;
@@ -1896,7 +2080,7 @@ summary { cursor:pointer; }
     const rawLine = state.line && state.line.trim() ? state.line.trim() : 'L29';
     const lineSegment = rawLine.replace(/[^\w-]+/g, '_') || 'L29';
     const stamp = new Date().toISOString().slice(0,16).replace(/:/g, '-');
-    downloadFile(`smed_${lineSegment}_${stamp}.csv`, csv, 'text/csv');
+    downloadFile(`smed_${lineSegment}_${stamp}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
   }
 
   async function exportHtml(options = {}) {
@@ -2071,7 +2255,7 @@ ${buildReportHtml()}
       const duration = mark.durationMs || Math.max(0, mark.t - previousTime);
       const isPhaseChange = mark.kind === 'event' && mark.label?.toLowerCase().includes('changement de phase');
       const attributedPhase = isPhaseChange ? phaseContext : mark.phase;
-      const attributedHc = attributedPhase === 'Prépa chgt de PO';
+      const attributedHc = attributedPhase === 'Activité CHGT de PO';
       if (!attributedHc) {
         totalChrono += duration;
         phaseDurations.set(attributedPhase, (phaseDurations.get(attributedPhase) || 0) + duration);
@@ -2105,9 +2289,9 @@ ${buildReportHtml()}
     const topContrib = phases.filter(p => p.gap > 0).sort((a,b) => b.gap - a.gap).slice(0,3);
     const topOps = gapSource.filter(item => timedPhases.includes(item.phase)).sort((a,b) => b.duration - a.duration).slice(0,3);
     const eventsList = Array.from(events.entries()).map(([label,count]) => ({ label, count })).sort((a,b) => b.count - a.count);
-    const prepaMarks = state.marks.filter(m => m.phase === 'Prépa chgt de PO');
+    const prepaMarks = state.marks.filter(m => m.phase === 'Activité CHGT de PO');
     const prepaCompleted = prepaMarks.filter(m => m.kind === 'op').length;
-    const prepaOps = (state.phases['Prépa chgt de PO'] || []).filter(op => op.enabled !== false);
+    const prepaOps = (state.phases['Activité CHGT de PO'] || []).filter(op => op.enabled !== false);
     const prepaTotal = prepaOps.length || 1;
     const prepaNotes = [];
     prepaMarks.forEach(mark => {
@@ -2182,7 +2366,7 @@ ${buildReportHtml()}
     phasesList.forEach(phase => {
       const section = document.createElement('section');
       section.className = 'section-group';
-      const isHC = phase === 'Prépa chgt de PO';
+      const isHC = phase === 'Activité CHGT de PO';
       section.innerHTML = `
         <details open>
           <summary><strong>${phase}</strong> ${isHC ? '<span class="badge hc">HC</span>' : ''}</summary>
@@ -2190,7 +2374,7 @@ ${buildReportHtml()}
             <button type="button" class="ghost" data-phase="${phase}" data-action="add">Ajouter une opération</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="assign">Définir opérateur</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="time">Définir temps</button>
-            <label class="import-group">Importer CSV<input type="file" data-phase="${phase}" accept=".csv" style="display:none"></label>
+            <label class="import-group">Importer CSV<input type="file" data-phase="${phase}" accept=".csv"></label>
             <button type="button" class="ghost" data-phase="${phase}" data-action="export-csv">Exporter CSV</button>
             <button type="button" class="ghost" data-phase="${phase}" data-action="export-json">Exporter JSON</button>
           </div>
@@ -2338,7 +2522,8 @@ ${buildReportHtml()}
     }
     if (action === 'export-csv') {
       const rows = state.phases[phase].map(op => `${op.name};${op.targetMin};${getCurrentOperatorName(op.operatorIndex || 0)};${op.enabled === false ? 0 : 1}`);
-      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, ['operation;temps_min;operateur;incluse'].concat(rows).join('\n'), 'text/csv');
+      const csvContent = ['operation;temps_min;operateur;incluse'].concat(rows).join('\n');
+      downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, `\uFEFF${csvContent}`, 'text/csv;charset=utf-8');
     }
     if (action === 'export-json') {
       downloadFile(`phase_${phase.replace(/\s+/g,'_')}.json`, JSON.stringify(state.phases[phase], null, 2), 'application/json');
@@ -2352,7 +2537,13 @@ ${buildReportHtml()}
     if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      const text = e.target.result;
+      let text = e.target.result;
+      if (typeof text !== 'string') {
+        text = new TextDecoder('utf-8').decode(text);
+      }
+      if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.slice(1);
+      }
       const lines = text.split(/\r?\n/).filter(Boolean);
       const entries = lines.slice(1).map(line => {
         if (!line.trim()) return null;
@@ -2533,7 +2724,7 @@ ${buildReportHtml()}
     renderAnalysis();
     if (els.start) {
       const hasStarted = state.marks.some(m => m.kind === 'start');
-      if (state.activePhase === 'Prépa chgt de PO') {
+      if (state.activePhase === 'Activité CHGT de PO') {
         els.start.disabled = true;
         els.start.classList.remove('primary');
         els.start.classList.add('secondary');
@@ -2573,13 +2764,15 @@ ${buildReportHtml()}
     }
     if (els.start) {
       els.start.addEventListener('click', () => {
-        if (state.activePhase === 'Prépa chgt de PO') {
+        if (state.activePhase === 'Activité CHGT de PO') {
           showToast('Phase hors chrono : démarrage indisponible', 'info');
           return;
         }
         startTimer();
       });
     }
+    // PATCH op-event — libellé bouton global
+    els.lap.innerHTML = '<span class="icon">✦</span>Évènement Hors changement';
     els.lap.setAttribute('aria-haspopup', 'menu');
     els.lap.setAttribute('aria-expanded', 'false');
     els.lap.addEventListener('click', openQuickEventMenu);
@@ -2606,7 +2799,7 @@ ${buildReportHtml()}
       ensureCompletedStructures(); // recrée des Set vides par opérateur/phase
 
       // 3) Repartir en Prépa (HC) et UI cohérente
-      state.activePhase = 'Prépa chgt de PO';
+      state.activePhase = 'Activité CHGT de PO';
       if (els.start) {
         els.start.disabled = true;
         els.start.classList.remove('primary');
@@ -2681,6 +2874,32 @@ ${buildReportHtml()}
     });
     if (els.eventForm) {
       els.eventForm.addEventListener('submit', handleEventFormSubmit);
+    }
+    // PATCH rm-toggle: suppression du toggle "seulement la courante"
+    // PATCH SMED — undo dernière validation
+    const undoBtn = document.getElementById('undoLast');
+    if (undoBtn){
+      undoBtn.addEventListener('click', ()=>{
+        // dernière marque d'opération (kind === 'op') dans la phase active pour l'opérateur focalisé
+        const opName = getCurrentOperatorName(runtime.focusedOperator);
+        for (let i = state.marks.length - 1; i >= 0; i--){
+          const m = state.marks[i];
+          if (m.kind === 'op' && m.operator === opName && m.phase === state.activePhase){
+            // retirer du set "complété"
+            ensureCompletedStructures();
+            state.completedOpsByOp[opName][state.activePhase].delete(m.opId || m.label);
+            // supprimer la marque
+            state.marks.splice(i,1);
+            saveState(true);
+            renderOperatorColumns();
+            renderLog();
+            updateAnalysisDelayed();
+            showToast('Dernière opération annulée');
+            return;
+          }
+        }
+        showToast('Rien à annuler', 'info');
+      });
     }
     document.addEventListener('keydown', handleShortcuts);
   }
