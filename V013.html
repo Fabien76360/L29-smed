@@ -868,6 +868,15 @@ summary { cursor:pointer; }
 .badge.time-warn{ color:var(--warn); }
 .badge.time-bad{ color:var(--danger); }
 .ops-toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+/* PATCH op-event */
+.op-evt-btn{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:999px;
+  background:rgba(61,220,151,.12);
+  border:1px solid rgba(61,220,151,.35);
+  color:var(--fg); font-size:.85rem; cursor:pointer;
+}
+.op-evt-btn:hover{ box-shadow:0 0 0 2px rgba(61,220,151,.25); }
 </style>
 </head>
 <body>
@@ -933,7 +942,8 @@ summary { cursor:pointer; }
                 </div>
                 <div class="main-actions">
                   <button id="start" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
-                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement rapide</button>
+                  <!-- PATCH op-event: libellé bouton mis à jour -->
+                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Évènement Hors changement</button>
                   <button id="end" class="warn" type="button"><span class="icon">■</span>Fin du changement</button>
                   <button id="reset" class="danger" type="button"><span class="icon">↺</span>Reset session</button>
                 </div>
@@ -944,10 +954,7 @@ summary { cursor:pointer; }
             </div>
             <!-- PATCH SMED — toolbar opérateurs -->
             <div id="opsToolbar" class="ops-toolbar" aria-label="Outils affichage opérations">
-              <label class="chip" style="cursor:pointer;">
-                <input id="toggleOnlyCurrent" type="checkbox" style="margin-right:8px;">
-                Montrer seulement la courante
-              </label>
+              <!-- PATCH rm-toggle: suppression du toggle "Montrer seulement la courante" -->
               <button id="undoLast" type="button" class="ghost">↺ Annuler dernière</button>
               <span id="hcMini" class="badge" style="display:none;"></span>
             </div>
@@ -1454,9 +1461,7 @@ summary { cursor:pointer; }
   function renderOperatorColumns() {
     ensureCompletedStructures();
     els.opsPhaseChips.innerHTML = '';
-    // PATCH SMED — toggle "seulement la courante"
-    const toggleOnlyCurrent = document.getElementById('toggleOnlyCurrent');
-    if (toggleOnlyCurrent) toggleOnlyCurrent.checked = !!state._onlyCurrent;
+    // PATCH rm-toggle: logique "seulement la courante" retirée
     if (!Number.isInteger(runtime.focusedOperator)) runtime.focusedOperator = state.defaultOperatorIndex;
     if (runtime.focusedOperator < 0 || runtime.focusedOperator >= state.operators.length) runtime.focusedOperator = state.defaultOperatorIndex;
     if (!state.multiView) runtime.focusedOperator = state.defaultOperatorIndex;
@@ -1486,6 +1491,17 @@ summary { cursor:pointer; }
       badge.textContent = operatorName;
       badge.addEventListener('click', () => { runtime.focusedOperator = idx; renderOperatorColumns(); });
       col.appendChild(badge);
+
+      // PATCH op-event — pastille sous le nom
+      const evtBtn = document.createElement('button');
+      evtBtn.type = 'button';
+      evtBtn.className = 'op-evt-btn';
+      evtBtn.textContent = "Évènement HC";
+      evtBtn.addEventListener('click', (e)=> {
+        e.stopPropagation();
+        openOperatorEventMenu(idx, evtBtn);
+      });
+      col.appendChild(evtBtn);
 
       const card = document.createElement('div');
       card.className = 'operator-card' + (idx === runtime.focusedOperator ? ' focused' : '');
@@ -1529,12 +1545,6 @@ summary { cursor:pointer; }
         target.push({ operation, opIndex, isDone });
       });
 
-      // PATCH SMED — affichage courant only
-      let visibleTodo = todoOps;
-      if (state._onlyCurrent){
-        visibleTodo = todoOps.slice(0,1);
-      }
-
       const buildPill = (operation, opIndex, isDone) => {
         const pill = document.createElement('button');
         pill.type = 'button';
@@ -1570,7 +1580,7 @@ summary { cursor:pointer; }
         return pill;
       };
 
-      if (doneOps.length && !state._onlyCurrent) {
+      if (doneOps.length) {
         const doneDetails = document.createElement('details');
         doneDetails.className = 'done-group';
         const summary = document.createElement('summary');
@@ -1589,7 +1599,7 @@ summary { cursor:pointer; }
       list.className = 'op-list';
       let firstPending = true;
 
-      visibleTodo.forEach(({ operation, opIndex }) => {
+      todoOps.forEach(({ operation, opIndex }) => {
         const pill = buildPill(operation, opIndex, false);
         if (firstPending) {
           pill.classList.add('current');
@@ -1925,6 +1935,63 @@ summary { cursor:pointer; }
     if (event.key === 'Escape') {
       closeQuickEventMenu();
     }
+  }
+
+  // PATCH op-event — ouvre le menu d'événements pour 1 opérateur
+  function openOperatorEventMenu(operatorIndex, anchorEl){
+    closeQuickEventMenu();
+    const available = state.events.filter(l => l && l.trim());
+    const menu = document.createElement('div');
+    menu.className = 'quick-event-menu';
+    menu.setAttribute('role','menu');
+
+    const add = (label) => {
+      addOperatorHCEvent(operatorIndex, label);
+      closeQuickEventMenu();
+    };
+
+    if (available.length){
+      available.forEach(label=>{
+        const b = document.createElement('button');
+        b.type='button'; b.textContent=label; b.addEventListener('click', ()=>add(label));
+        menu.appendChild(b);
+      });
+    }
+    const custom = document.createElement('button');
+    custom.type='button'; custom.textContent='Autre…';
+    custom.addEventListener('click', ()=>{
+      const manual = prompt("Libellé de l'événement HC :");
+      if (manual && manual.trim()) add(manual.trim());
+    });
+    menu.appendChild(custom);
+
+    document.body.appendChild(menu);
+    const r = anchorEl.getBoundingClientRect();
+    menu.style.top = `${r.bottom + window.scrollY + 8}px`;
+    menu.style.left = `${r.left + window.scrollX}px`;
+    runtime.quickEventMenu = menu;
+    document.addEventListener('click', handleQuickEventOutside, true);
+    document.addEventListener('keydown', handleQuickEventKeydown);
+  }
+
+  // PATCH op-event — enregistre l'événement HC pour l'opérateur
+  function addOperatorHCEvent(operatorIndex, label){
+    const operatorName = getCurrentOperatorName(operatorIndex);
+    state.marks.push({
+      t: getSessionElapsed(),
+      phase: 'Activité CHGT de PO',
+      operator: operatorName,
+      label: label,
+      kind: 'event',
+      note: '',
+      hc: true,
+      durationMs: 0
+    });
+    saveState();
+    renderLog();
+    renderOperatorColumns();
+    updateAnalysisDelayed();
+    showToast(`Événement HC ajouté pour ${operatorName}`);
   }
 
   async function finishChange() {
@@ -2704,6 +2771,8 @@ ${buildReportHtml()}
         startTimer();
       });
     }
+    // PATCH op-event — libellé bouton global
+    els.lap.innerHTML = '<span class="icon">✦</span>Évènement Hors changement';
     els.lap.setAttribute('aria-haspopup', 'menu');
     els.lap.setAttribute('aria-expanded', 'false');
     els.lap.addEventListener('click', openQuickEventMenu);
@@ -2806,14 +2875,7 @@ ${buildReportHtml()}
     if (els.eventForm) {
       els.eventForm.addEventListener('submit', handleEventFormSubmit);
     }
-    // PATCH SMED — toggle "seulement la courante"
-    const onlyCurrentEl = document.getElementById('toggleOnlyCurrent');
-    if (onlyCurrentEl){
-      onlyCurrentEl.addEventListener('change', ()=>{
-        state._onlyCurrent = !!onlyCurrentEl.checked;
-        renderOperatorColumns();
-      });
-    }
+    // PATCH rm-toggle: suppression du toggle "seulement la courante"
     // PATCH SMED — undo dernière validation
     const undoBtn = document.getElementById('undoLast');
     if (undoBtn){
