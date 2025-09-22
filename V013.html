@@ -387,6 +387,9 @@ button:not(:disabled):active { transform:translateY(1px); }
   backdrop-filter:blur(8px);
 }
 .operator-badge.focused{box-shadow:0 0 0 3px rgba(61,220,151,.28);background:rgba(61,220,151,.22)}
+/* Rangée sous le nom opérateur pour la pastille HC */
+.op-hc-row{display:flex;align-items:center;gap:8px}
+.op-hc-row .hc-btn{border:none;cursor:pointer}
 .operator-header {
   display:flex;
   justify-content:space-between;
@@ -901,7 +904,7 @@ summary { cursor:pointer; }
                 </div>
                 <div class="main-actions">
                   <button id="start" class="primary" type="button"><span class="icon">▶</span>Démarrer</button>
-                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement rapide</button>
+                  <button id="lap" class="secondary" type="button"><span class="icon">✦</span>Événement Hors changement</button>
                   <button id="end" class="warn" type="button"><span class="icon">■</span>Fin du changement</button>
                   <button id="reset" class="danger" type="button"><span class="icon">↺</span>Reset session</button>
                 </div>
@@ -977,7 +980,7 @@ summary { cursor:pointer; }
         </div>
       </div>
       <div class="panel compact events-panel">
-        <div class="panel-title"><h2>Évènements prédéfinis</h2><span class="label-muted">Utilisés par l'événement rapide</span></div>
+        <div class="panel-title"><h2>Évènements prédéfinis</h2><span class="label-muted">Utilisés par l'événement Hors changement</span></div>
         <form id="eventForm" class="event-form">
           <div class="field">
             <label>Nouvel événement<input type="text" id="eventInput" placeholder="Libellé d'événement"></label>
@@ -1386,6 +1389,21 @@ summary { cursor:pointer; }
       badge.addEventListener('click', () => { runtime.focusedOperator = idx; renderOperatorColumns(); });
       col.appendChild(badge);
 
+      // Ajout : pastille "Évènement Hors changement" sous le nom de l'opérateur
+      const hcRow = document.createElement('div');
+      hcRow.className = 'op-hc-row';
+      const hcBtn = document.createElement('button');
+      hcBtn.type = 'button';
+      hcBtn.className = 'badge hc hc-btn';
+      hcBtn.title = `Ajouter un évènement Hors changement pour ${operatorName}`;
+      hcBtn.textContent = 'Évènement Hors changement';
+      hcBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openOperatorHcMenu(idx, hcBtn);
+      });
+      hcRow.appendChild(hcBtn);
+      col.appendChild(hcRow);
+
       const card = document.createElement('div');
       card.className = 'operator-card' + (idx === runtime.focusedOperator ? ' focused' : '');
       card.dataset.index = idx;
@@ -1768,6 +1786,71 @@ summary { cursor:pointer; }
     saveState();
     renderLog();
     updateAnalysisDelayed();
+  }
+
+  // Ajout : créer un évènement Hors Changement (HC) pour un opérateur donné
+  function addHcEventForOperator(label, operatorName) {
+    state.marks.push({
+      t: getSessionElapsed(),
+      phase: state.activePhase,
+      operator: operatorName || '',
+      label,
+      kind: 'event',
+      note: '',
+      hc: true,
+      durationMs: 0
+    });
+    saveState();
+    renderLog();
+    updateAnalysisDelayed();
+  }
+
+  // Ajout : menu contextuel pour ajouter un évènement HC à un opérateur
+  function openOperatorHcMenu(operatorIndex, anchorEl) {
+    if (runtime.quickEventMenu) { closeQuickEventMenu(); return; }
+    const available = state.events.filter(label => label && label.trim());
+    const operatorName = getCurrentOperatorName(operatorIndex);
+
+    const menu = document.createElement('div');
+    menu.className = 'quick-event-menu';
+    menu.setAttribute('role', 'menu');
+
+    const useLabel = (txt) => {
+      addHcEventForOperator(txt, operatorName);
+      closeQuickEventMenu();
+    };
+
+    if (!available.length) {
+      const manual = prompt(`Libellé d'événement (HC) pour ${operatorName} :`);
+      if (manual && manual.trim()) useLabel(manual.trim());
+      return;
+    }
+
+    available.forEach(label => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.addEventListener('click', () => useLabel(label));
+      menu.appendChild(btn);
+    });
+
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.textContent = 'Autre…';
+    custom.addEventListener('click', () => {
+      const manual = prompt(`Libellé d'événement (HC) pour ${operatorName} :`);
+      if (manual && manual.trim()) useLabel(manual.trim());
+    });
+    menu.appendChild(custom);
+
+    document.body.appendChild(menu);
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.top  = `${rect.bottom + window.scrollY + 8}px`;
+    menu.style.left = `${rect.left + window.scrollX}px`;
+    runtime.quickEventMenu = menu;
+
+    document.addEventListener('click', handleQuickEventOutside, true);
+    document.addEventListener('keydown', handleQuickEventKeydown);
   }
 
   function openQuickEventMenu() {
