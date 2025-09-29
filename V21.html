@@ -402,6 +402,51 @@ button:not(:disabled):active { transform:translateY(1px); }
   flex-direction:column;
   gap:10px;
 }
+.op-item { display:grid; gap:8px; }
+.op-item-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.details-chip {
+  padding:8px 14px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.08);
+  font-size:0.75rem;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:color .2s ease, border-color .2s ease, background .2s ease;
+}
+.details-chip.has-content {
+  border-color:rgba(61,220,151,.55);
+  color:var(--accent);
+  background:rgba(61,220,151,.12);
+}
+.details-chip[aria-expanded="true"] {
+  border-color:var(--accent);
+  background:rgba(61,220,151,.18);
+  color:var(--accent);
+}
+.details-chip.is-empty { opacity:.6; }
+.details-chip:focus-visible,
+.details-chip:hover {
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.op-details {
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.05);
+  padding:12px 14px;
+  font-size:0.85rem;
+  line-height:1.5;
+  color:var(--fg);
+  display:none;
+  animation:detailsIn .25s ease;
+}
+.op-details.open { display:block; }
+@keyframes detailsIn {
+  from { opacity:0; transform:translateY(-4px); }
+  to { opacity:1; transform:translateY(0); }
+}
 .op-pill {
   display:flex;
   align-items:center;
@@ -652,6 +697,12 @@ tfoot td { font-weight:700; }
 }
 .import-group input[type="file"] { display:none; }
 textarea { background:rgba(15,26,52,.8); border:1px solid rgba(255,255,255,.12); border-radius:var(--radius); padding:12px; min-height:110px; }
+.param-table textarea {
+  min-height:72px;
+  resize:vertical;
+  width:100%;
+  color:inherit;
+}
 summary { cursor:pointer; }
 /* Analysis */
 .analysis-grid { display:grid; gap:20px; }
@@ -1075,7 +1126,7 @@ summary { cursor:pointer; }
 <script>
 (() => {
   const STORAGE_KEY = 'smed_timer_v3';
-  const SCHEMA_VERSION = 4;
+  const SCHEMA_VERSION = 5;
   const phasesList = ['Activité CHGT de PO','Début de PO','Fin de PO','Vide de ligne'];
   const timedPhases = ['Début de PO','Fin de PO','Vide de ligne'];
   function newId(){ return 'op_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
@@ -1125,17 +1176,17 @@ summary { cursor:pointer; }
     events: [],
     phases: {
       'Activité CHGT de PO': [
-        { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0, enabled: true }
+        { id: newId(), name: 'Checklist sécurité', targetMin: 3, operatorIndex: 0, enabled: true, details: '' }
       ],
       'Début de PO': [
-        { id: newId(), name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0, enabled: true },
-        { id: newId(), name: 'Changement outillage', targetMin: 6, operatorIndex: 0, enabled: true }
+        { id: newId(), name: 'Arrêt ligne', targetMin: 4, operatorIndex: 0, enabled: true, details: '' },
+        { id: newId(), name: 'Changement outillage', targetMin: 6, operatorIndex: 0, enabled: true, details: '' }
       ],
       'Fin de PO': [
-        { id: newId(), name: 'Redémarrage', targetMin: 5, operatorIndex: 0, enabled: true }
+        { id: newId(), name: 'Redémarrage', targetMin: 5, operatorIndex: 0, enabled: true, details: '' }
       ],
       'Vide de ligne': [
-        { id: newId(), name: 'Nettoyage final', targetMin: 4, operatorIndex: 0, enabled: true }
+        { id: newId(), name: 'Nettoyage final', targetMin: 4, operatorIndex: 0, enabled: true, details: '' }
       ]
     },
     alertMin: 12,
@@ -1246,7 +1297,12 @@ summary { cursor:pointer; }
       merged.phases[ph] = (merged.phases[ph] || []).map(op => {
         const hasEnabled = op && Object.prototype.hasOwnProperty.call(op, 'enabled');
         const enabled = hasEnabled ? !(op.enabled === false || op.enabled === 0 || op.enabled === '0') : true;
-        return { ...op, id: op.id || newId(), enabled };
+        return {
+          ...op,
+          id: op.id || newId(),
+          enabled,
+          details: op && typeof op.details === 'string' ? op.details : ''
+        };
       });
     });
     merged.completedOpsByOp = merged.completedOpsByOp || {};
@@ -1362,6 +1418,17 @@ summary { cursor:pointer; }
       ['\'', '&#39;']
     ]);
     return String(value).replace(/[&<>"']/g, ch => entities.get(ch));
+  }
+
+  function formatDetailsHtml(text) {
+    if (!text || !text.trim()) {
+      return '<span class="label-muted">Aucun détail renseigné</span>';
+    }
+    return escapeHtml(text).replace(/\r?\n/g, '<br>');
+  }
+
+  function sanitizeCsvText(text) {
+    return String(text || '').replace(/\r?\n/g, ' / ').replace(/;/g, ',').trim();
   }
 
   function targetMinutesForPhase(phase) {
@@ -1546,6 +1613,12 @@ summary { cursor:pointer; }
       });
 
       const buildPill = (operation, opIndex, isDone) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'op-item';
+
+        const head = document.createElement('div');
+        head.className = 'op-item-head';
+
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = 'op-pill';
@@ -1577,7 +1650,43 @@ summary { cursor:pointer; }
         pill.appendChild(checkSpan);
         pill.appendChild(noteBtn);
         pill.addEventListener('click', () => validateOperation(idx, operation));
-        return pill;
+
+        const detailsBtn = document.createElement('button');
+        detailsBtn.type = 'button';
+        detailsBtn.className = 'details-chip';
+        detailsBtn.textContent = 'Détails';
+        const hasDetails = !!(operation.details && operation.details.trim());
+        if (hasDetails) {
+          detailsBtn.classList.add('has-content');
+        } else {
+          detailsBtn.classList.add('is-empty');
+        }
+        detailsBtn.title = hasDetails ? 'Afficher les détails' : 'Aucun détail renseigné';
+        detailsBtn.setAttribute('aria-expanded', 'false');
+
+        const detailPanel = document.createElement('div');
+        detailPanel.className = 'op-details';
+        const detailsId = `${operation.id}-details`;
+        detailPanel.id = detailsId;
+        detailPanel.innerHTML = formatDetailsHtml(operation.details || '');
+        detailPanel.hidden = true;
+        detailsBtn.setAttribute('aria-controls', detailsId);
+
+        detailsBtn.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          const willOpen = detailPanel.hidden;
+          detailPanel.hidden = !willOpen;
+          detailPanel.classList.toggle('open', willOpen);
+          detailsBtn.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        head.appendChild(pill);
+        head.appendChild(detailsBtn);
+        wrapper.appendChild(head);
+        wrapper.appendChild(detailPanel);
+
+        return { wrapper, pill };
       };
 
       if (doneOps.length) {
@@ -1588,8 +1697,8 @@ summary { cursor:pointer; }
         const doneList = document.createElement('div');
         doneList.className = 'done-list';
         doneOps.forEach(({ operation, opIndex }) => {
-          const pill = buildPill(operation, opIndex, true);
-          doneList.appendChild(pill);
+          const { wrapper } = buildPill(operation, opIndex, true);
+          doneList.appendChild(wrapper);
         });
         doneDetails.append(summary, doneList);
         card.appendChild(doneDetails);
@@ -1600,12 +1709,12 @@ summary { cursor:pointer; }
       let firstPending = true;
 
       todoOps.forEach(({ operation, opIndex }) => {
-        const pill = buildPill(operation, opIndex, false);
+        const { wrapper, pill } = buildPill(operation, opIndex, false);
         if (firstPending) {
           pill.classList.add('current');
           firstPending = false;
         }
-        list.appendChild(pill);
+        list.appendChild(wrapper);
       });
 
       if (!phaseOps.length) {
@@ -2381,10 +2490,10 @@ ${buildReportHtml()}
           <div class="phase-table-wrapper">
             <table class="param-table" data-phase="${phase}">
               <thead>
-                <tr><th title="Inclure cette opération dans le SMED (décocher si non applicable)">Incluse ?</th><th>Opération</th><th>Temps cible (min)</th><th>Opérateur</th><th></th></tr>
+                <tr><th title="Inclure cette opération dans le SMED (décocher si non applicable)">Incluse ?</th><th>Opération</th><th>Temps cible (min)</th><th>Opérateur</th><th>Détails (optionnel)</th><th></th></tr>
               </thead>
               <tbody></tbody>
-              <tfoot><tr><td colspan="5">Σ ${phase}: <strong class="phase-total">0 min</strong></td></tr></tfoot>
+              <tfoot><tr><td colspan="6">Σ ${phase}: <strong class="phase-total">0 min</strong></td></tr></tfoot>
             </table>
           </div>
         </details>
@@ -2417,6 +2526,7 @@ ${buildReportHtml()}
       <td><input type="text" data-field="name" value="${escapeHtml(operation.name || '')}"></td>
       <td><input type="number" step="0.5" min="0" data-field="targetMin" value="${operation.targetMin || 0}"></td>
       <td><select data-field="operatorIndex"></select></td>
+      <td><textarea data-field="details" placeholder="Checklist, sous-étapes, remarques…">${escapeHtml(operation.details || '')}</textarea></td>
       <td class="row-tools"><button type="button" class="ghost" data-action="delete">Suppr.</button></td>
     `;
     const select = tr.querySelector('select');
@@ -2464,6 +2574,8 @@ ${buildReportHtml()}
     }
     if (field === 'name') {
       state.phases[phase][idx][field] = input.value;
+    } else if (field === 'details') {
+      state.phases[phase][idx][field] = input.value;
     } else {
       const numeric = Number(input.value);
       if (field === 'operatorIndex') {
@@ -2484,7 +2596,7 @@ ${buildReportHtml()}
     const phase = btn.dataset.phase;
     const action = btn.dataset.action;
     if (action === 'add') {
-      state.phases[phase].push({ id: newId(), name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex, enabled: true });
+      state.phases[phase].push({ id: newId(), name: 'Nouvelle opération', targetMin: 1, operatorIndex: state.defaultOperatorIndex, enabled: true, details: '' });
       saveState(true);
       buildPhaseTables();
       renderOperatorColumns();
@@ -2521,8 +2633,12 @@ ${buildReportHtml()}
       updateTargets();
     }
     if (action === 'export-csv') {
-      const rows = state.phases[phase].map(op => `${op.name};${op.targetMin};${getCurrentOperatorName(op.operatorIndex || 0)};${op.enabled === false ? 0 : 1}`);
-      const csvContent = ['operation;temps_min;operateur;incluse'].concat(rows).join('\n');
+      const rows = state.phases[phase].map(op => {
+        const operatorIdx = typeof op.operatorIndex === 'number' ? op.operatorIndex : state.defaultOperatorIndex;
+        const operatorLabel = getCurrentOperatorName(operatorIdx || 0);
+        return `${op.name};${op.targetMin};${operatorLabel};${op.enabled === false ? 0 : 1};${sanitizeCsvText(op.details)}`;
+      });
+      const csvContent = ['operation;temps_min;operateur;incluse;details'].concat(rows).join('\n');
       downloadFile(`phase_${phase.replace(/\s+/g,'_')}.csv`, `\uFEFF${csvContent}`, 'text/csv;charset=utf-8');
     }
     if (action === 'export-json') {
@@ -2552,6 +2668,7 @@ ${buildReportHtml()}
         const time = parts[1];
         const operator = parts[2];
         const includedRaw = parts[3];
+        const detailsRaw = parts[4];
         const cleanedName = (name || '').trim();
         const numeric = Number.parseFloat((time || '').replace(',', '.'));
         const operatorLabel = (operator || '').trim().toLowerCase();
@@ -2563,7 +2680,8 @@ ${buildReportHtml()}
           name: cleanedName || 'Opération',
           targetMin: Number.isFinite(numeric) ? numeric : 0,
           operatorIndex,
-          enabled
+          enabled,
+          details: typeof detailsRaw === 'string' ? detailsRaw.replace(/\r/g,'').trim() : ''
         };
       }).filter(Boolean);
       if (entries.length) {
@@ -2611,12 +2729,14 @@ ${buildReportHtml()}
       const rows = Array.from(tbody.querySelectorAll('tr'));
       state.phases[phase] = rows.map(row => {
         const enabledInput = row.querySelector('input[data-field="enabled"]');
+        const detailsInput = row.querySelector('[data-field="details"]');
         return {
           id: row.dataset.id || newId(),
           name: row.querySelector('input[data-field="name"]').value,
           targetMin: Number(row.querySelector('input[data-field="targetMin"]').value) || 0,
           operatorIndex: Number(row.querySelector('select[data-field="operatorIndex"]').value),
-          enabled: enabledInput ? enabledInput.checked : true
+          enabled: enabledInput ? enabledInput.checked : true,
+          details: detailsInput ? detailsInput.value : ''
         };
       });
       saveState();
