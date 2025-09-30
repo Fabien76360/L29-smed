@@ -772,8 +772,14 @@ summary { cursor:pointer; }
   padding:12px 18px; border-radius:999px; box-shadow:0 10px 24px rgba(61,220,151,.25);
 }
 #openReport:hover{ transform: translateY(-1px); }
-.op-pill .note-btn{
+.pill-actions{
   margin-left:auto;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+.op-pill .note-btn,
+.pill-actions .pill-action{
   display:inline-flex;
   align-items:center;
   justify-content:center;
@@ -788,7 +794,9 @@ summary { cursor:pointer; }
   cursor:pointer;
 }
 .op-pill .note-btn:hover,
-.op-pill .note-btn:focus-visible{
+.op-pill .note-btn:focus-visible,
+.pill-actions .pill-action:hover,
+.pill-actions .pill-action:focus-visible{
   border-color: var(--accent);
   box-shadow: var(--focus);
 }
@@ -796,6 +804,11 @@ summary { cursor:pointer; }
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(61,220,151,.10);
+}
+.pill-actions .pill-action--ghost{
+  background:rgba(255,255,255,.06);
+  min-width:auto;
+  padding:8px 14px;
 }
 #splash {
   position:fixed;
@@ -1631,6 +1644,8 @@ summary { cursor:pointer; }
         const checkSpan = document.createElement('span');
         checkSpan.className = 'check';
         checkSpan.textContent = '✔';
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'pill-actions';
         const noteBtn = document.createElement('button');
         noteBtn.type = 'button';
         noteBtn.className = 'note-btn';
@@ -1645,24 +1660,14 @@ summary { cursor:pointer; }
           event.stopPropagation();
           handleOperationNote(idx, operation);
         });
+        actionsWrap.appendChild(noteBtn);
         pill.appendChild(indexSpan);
         pill.appendChild(nameSpan);
         pill.appendChild(checkSpan);
-        pill.appendChild(noteBtn);
+        pill.appendChild(actionsWrap);
         pill.addEventListener('click', () => validateOperation(idx, operation));
 
-        const detailsBtn = document.createElement('button');
-        detailsBtn.type = 'button';
-        detailsBtn.className = 'details-chip';
-        detailsBtn.textContent = 'Détails';
         const hasDetails = !!(operation.details && operation.details.trim());
-        if (hasDetails) {
-          detailsBtn.classList.add('has-content');
-        } else {
-          detailsBtn.classList.add('is-empty');
-        }
-        detailsBtn.title = hasDetails ? 'Afficher les détails' : 'Aucun détail renseigné';
-        detailsBtn.setAttribute('aria-expanded', 'false');
 
         const detailPanel = document.createElement('div');
         detailPanel.className = 'op-details';
@@ -1670,19 +1675,26 @@ summary { cursor:pointer; }
         detailPanel.id = detailsId;
         detailPanel.innerHTML = formatDetailsHtml(operation.details || '');
         detailPanel.hidden = true;
-        detailsBtn.setAttribute('aria-controls', detailsId);
-
-        detailsBtn.addEventListener('click', event => {
-          event.preventDefault();
-          event.stopPropagation();
-          const willOpen = detailPanel.hidden;
-          detailPanel.hidden = !willOpen;
-          detailPanel.classList.toggle('open', willOpen);
-          detailsBtn.setAttribute('aria-expanded', String(willOpen));
-        });
+        if (hasDetails) {
+          const detailsBtn = document.createElement('button');
+          detailsBtn.type = 'button';
+          detailsBtn.className = 'pill-action pill-action--ghost';
+          detailsBtn.textContent = 'Détails';
+          detailsBtn.title = 'Afficher les détails';
+          detailsBtn.setAttribute('aria-expanded', 'false');
+          detailsBtn.setAttribute('aria-controls', detailsId);
+          detailsBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const willOpen = detailPanel.hidden;
+            detailPanel.hidden = !willOpen;
+            detailPanel.classList.toggle('open', willOpen);
+            detailsBtn.setAttribute('aria-expanded', String(willOpen));
+          });
+          actionsWrap.appendChild(detailsBtn);
+        }
 
         head.appendChild(pill);
-        head.appendChild(detailsBtn);
         wrapper.appendChild(head);
         wrapper.appendChild(detailPanel);
 
