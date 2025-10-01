@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>SMED L29 – Suivi changement de PO</title>
 <style>
 :root {
@@ -883,7 +886,7 @@ summary { cursor:pointer; }
 <div id="splash" role="dialog" aria-label="Écran de lancement">
   <div class="splash-vignette">
     <div class="splash-logo-wrap logo-container">
-      <img src="smed-logo.png" alt="Logo SMED" class="splash-logo logo-image">
+      <img src="smed-logo.png?v=SMEDV02-2025-10-01" alt="Logo SMED" class="splash-logo logo-image">
       <span class="splash-logo-fallback logo-fallback-text" aria-hidden="true">SMED</span>
     </div>
     <div class="splash-caption">Chargement du tableau de bord…</div>
@@ -894,7 +897,7 @@ summary { cursor:pointer; }
     <div class="top-nav">
       <div class="brand">
         <div class="brand-mark logo-container">
-          <img src="smed-logo.png" alt="SMED" class="brand-logo logo-image">
+          <img src="smed-logo.png?v=SMEDV02-2025-10-01" alt="SMED" class="brand-logo logo-image">
           <span class="brand-logo-fallback logo-fallback-text" aria-hidden="true">SMED</span>
         </div>
         <span class="brand-sep" aria-hidden="true"></span>
@@ -1074,7 +1077,9 @@ summary { cursor:pointer; }
 <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 <script>
 (() => {
-  const STORAGE_KEY = 'smed_timer_v3';
+  const BUILD_ID = 'SMEDV02-2025-10-01';  // change la date à chaque nouvelle release
+  const STORAGE_KEY_BASE = 'smed_timer_v3';
+  const STORAGE_KEY = `${STORAGE_KEY_BASE}::${BUILD_ID}`;
   const SCHEMA_VERSION = 4;
   const phasesList = ['Activité CHGT de PO','Début de PO','Fin de PO','Vide de ligne'];
   const timedPhases = ['Début de PO','Fin de PO','Vide de ligne'];
@@ -1218,9 +1223,14 @@ summary { cursor:pointer; }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return DEFAULT_STATE();
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      if (Number(data.schema_version) !== SCHEMA_VERSION) {
+        localStorage.removeItem(STORAGE_KEY);
+        return DEFAULT_STATE();
+      }
+      return data;
     } catch (err) {
-      console.error('Erreur de chargement, réinitialisation', err);
+      console.error('Erreur de chargement, reset', err);
       return DEFAULT_STATE();
     }
   }
