@@ -2071,7 +2071,7 @@ ${buildReportHtml()}
       const duration = mark.durationMs || Math.max(0, mark.t - previousTime);
       const isPhaseChange = mark.kind === 'event' && mark.label?.toLowerCase().includes('changement de phase');
       const attributedPhase = isPhaseChange ? phaseContext : mark.phase;
-      const attributedHc = attributedPhase === 'Prépa chgt de PO';
+      const attributedHc = attributedPhase === 'Prépa chgt de PO' || mark.hc === true;
       if (!attributedHc) {
         totalChrono += duration;
         phaseDurations.set(attributedPhase, (phaseDurations.get(attributedPhase) || 0) + duration);
